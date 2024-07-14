@@ -27,6 +27,8 @@ struct Image {
     int eraserSize;
     float rotation; 
     float targetRotation; // New member for rotation angle
+    bool isHoveringZoomControl;
+    int activeZoomCorner;
 };
 
 std::vector<Image> images;
@@ -302,13 +304,6 @@ void DisplayImage(Image& img, bool& imageClicked)
         bottomRight.y = std::max(bottomRight.y, corners[i].y);
     }
 
-    // Add padding to the bounding box
-    float padding = 15.0f;
-    topLeft.x -= padding;
-    topLeft.y -= padding;
-    bottomRight.x += padding;
-    bottomRight.y += padding;
-
     // Draw the image
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     draw_list->AddImageQuad(
@@ -326,15 +321,96 @@ void DisplayImage(Image& img, bool& imageClicked)
     static ImVec2 dragStartPos;
     static ImVec2 imageDragStartPos;
 
-    if (isHovered && ImGui::IsMouseClicked(0) && !imageClicked)
+    bool isInteractingWithZoomControl = false;
+    static ImVec2 zoomStartPos;
+    static float zoomStartValue;
+
+    // Draw zoom control boxes and handle zooming only if the image is selected
+    if (img.selected)
+    {
+        float boxSize = 10.0f;
+        float boxOffset = 5.0f;
+        ImU32 boxColor = IM_COL32(200, 200, 200, 255);
+        ImU32 boxHoverColor = IM_COL32(255, 255, 255, 255);
+
+        ImVec2 zoomCorners[4] = {
+            ImVec2(topLeft.x - boxSize - boxOffset, topLeft.y - boxSize - boxOffset),
+            ImVec2(bottomRight.x + boxOffset, topLeft.y - boxSize - boxOffset),
+            ImVec2(bottomRight.x + boxOffset, bottomRight.y + boxOffset),
+            ImVec2(topLeft.x - boxSize - boxOffset, bottomRight.y + boxOffset)
+        };
+
+        for (int i = 0; i < 4; ++i)
+        {
+            ImVec2 boxMin = zoomCorners[i];
+            ImVec2 boxMax = ImVec2(boxMin.x + boxSize, boxMin.y + boxSize);
+
+            bool isHovering = ImGui::IsMouseHoveringRect(boxMin, boxMax);
+            ImU32 color = isHovering ? boxHoverColor : boxColor;
+
+            draw_list->AddRectFilled(boxMin, boxMax, color);
+
+            if (isHovering)
+            {
+                isInteractingWithZoomControl = true;
+                if (ImGui::IsMouseClicked(0))
+                {
+                    img.activeZoomCorner = i;
+                    zoomStartPos = ImGui::GetMousePos();
+                    zoomStartValue = img.zoom;
+                    imageClicked = true;  // Prevent deselection
+                }
+            }
+        }
+
+        // Handle zooming
+        if (img.activeZoomCorner != -1 && ImGui::IsMouseDown(0))
+        {
+            ImVec2 dragDelta = ImVec2(ImGui::GetMousePos().x - zoomStartPos.x, 
+                                      ImGui::GetMousePos().y - zoomStartPos.y);
+            
+            // Calculate zoom based on drag distance from start point
+            float dragDistance = sqrtf(dragDelta.x * dragDelta.x + dragDelta.y * dragDelta.y);
+            float zoomFactor = 1.0f + dragDistance * 0.01f;
+
+            if ((dragDelta.x < 0 && img.activeZoomCorner == 1) || 
+                (dragDelta.x > 0 && img.activeZoomCorner == 0) ||
+                (dragDelta.y < 0 && img.activeZoomCorner == 2) ||
+                (dragDelta.y > 0 && img.activeZoomCorner == 3))
+            {
+                // Zoom out
+                zoomFactor = 1.0f / zoomFactor;
+            }
+
+            float newZoom = zoomStartValue * zoomFactor;
+            newZoom = std::max(0.1f, std::min(newZoom, 5.0f));  // Clamp zoom between 0.1 and 5.0
+
+            // Calculate zoom center (use the center of the image for simplicity)
+            ImVec2 zoomCenter = center;
+
+            // Calculate the offset of the zoom center from the image position
+            ImVec2 centerOffset = ImVec2(zoomCenter.x - img.position.x, zoomCenter.y - img.position.y);
+
+            // Calculate new position to keep the zoom center stationary
+            img.targetPosition.x = zoomCenter.x - centerOffset.x * (newZoom / img.zoom);
+            img.targetPosition.y = zoomCenter.y - centerOffset.y * (newZoom / img.zoom);
+
+            img.zoom = newZoom;
+        }
+
+        // Draw selection box around the selected image
+        draw_list->AddRect(
+            topLeft,
+            bottomRight,
+            IM_COL32(180, 190, 254, 255), 0.0f, 15, 2.0f
+        );
+    }
+
+    // Handle image selection
+    if (isHovered && ImGui::IsMouseClicked(0) && !imageClicked && !isInteractingWithZoomControl)
     {
         img.selected = true;
         imageClicked = true;
-        for (auto& other_img : images) {
-            if (&other_img != &img) {
-                other_img.selected = false;
-            }
-        }
         draggedImage = &img;
         dragStartPos = ImGui::GetMousePos();
         imageDragStartPos = img.position;
@@ -343,9 +419,10 @@ void DisplayImage(Image& img, bool& imageClicked)
     if (ImGui::IsMouseReleased(0))
     {
         draggedImage = nullptr;
+        img.activeZoomCorner = -1;
     }
 
-    if (draggedImage == &img && ImGui::IsMouseDown(0))
+    if (draggedImage == &img && ImGui::IsMouseDown(0) && !isInteractingWithZoomControl)
     {
         if (img.eraserMode)
         {
@@ -362,23 +439,14 @@ void DisplayImage(Image& img, bool& imageClicked)
         }
     }
 
-    // Draw selection box around the selected image
-    if (img.selected)
-    {
-        draw_list->AddRect(
-            topLeft,
-            bottomRight,
-            IM_COL32(180, 190, 254, 255), 0.0f, 15, 2.0f
-        );
-    }
+    // Reset hover state
+    img.isHoveringZoomControl = false;
 }
 
 
 
 void ShowImageViewer(bool* p_open)
 {
-    static Image* selectedImage = nullptr;
-
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImVec2(ImGui::GetIO().DisplaySize.x - 200, ImGui::GetIO().DisplaySize.y));
     ImGui::Begin("Image Viewer", p_open, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);
@@ -419,6 +487,8 @@ void ShowImageViewer(bool* p_open)
                 img.eraserSize = 5;
                 img.rotation = 0.0f;
                 img.targetRotation = 0.0f;
+                img.isHoveringZoomControl = false;
+                img.activeZoomCorner = -1;
                 images.push_back(img);
                 std::cout << "Image added to the viewer" << std::endl;
             }
@@ -447,7 +517,6 @@ void ShowImageViewer(bool* p_open)
         }
         images.clear();
         nextUploadOrder = 0;
-        selectedImage = nullptr;
     }
 
     ImGui::SameLine();
@@ -475,8 +544,6 @@ void ShowImageViewer(bool* p_open)
         {
             img.texture = CreateTextureFromData(img.data, img.width, img.height);
         }
-
-        selectedImage = nullptr;
     }
 
     ImGui::SameLine();
@@ -504,8 +571,6 @@ void ShowImageViewer(bool* p_open)
         {
             img.texture = CreateTextureFromData(img.data, img.width, img.height);
         }
-
-        selectedImage = nullptr;
     }
 
     ImGui::SameLine();
@@ -522,21 +587,21 @@ void ShowImageViewer(bool* p_open)
     ImVec2 windowPos = ImGui::GetWindowPos();
     ImVec2 relativeMousePos = ImVec2(mousePos.x - windowPos.x, mousePos.y - windowPos.y);
 
+    bool imageClicked = false;
+    bool clickedOutside = ImGui::IsMouseClicked(0) && ImGui::IsWindowHovered();
+
     Image* hoveredImage = nullptr;
-    bool imageAreaClicked = false;
 
     // Display all images and find the topmost hovered image
     for (auto& img : images)
     {
         if (img.open)
         {
-            bool dummy = false;
-            DisplayImage(img, dummy);
+            DisplayImage(img, imageClicked);
 
             if (IsPointInImage(img, relativeMousePos))
             {
                 hoveredImage = &img;
-                imageAreaClicked = true;
             }
         }
     }
@@ -546,16 +611,18 @@ void ShowImageViewer(bool* p_open)
     {
         if (hoveredImage)
         {
-            selectedImage = hoveredImage;
+            hoveredImage->selected = true;
             for (auto& img : images)
             {
-                img.selected = (&img == selectedImage);
+                if (&img != hoveredImage)
+                {
+                    img.selected = false;
+                }
             }
         }
-        else if (!imageAreaClicked && ImGui::IsWindowHovered())
+        else if (clickedOutside && !imageClicked)
         {
             // Deselect all images when clicking on empty space
-            selectedImage = nullptr;
             for (auto& img : images)
             {
                 img.selected = false;
@@ -566,9 +633,6 @@ void ShowImageViewer(bool* p_open)
     images.erase(std::remove_if(images.begin(), images.end(),
         [&](const Image& img) { 
             if (!img.open) {
-                if (&img == selectedImage) {
-                    selectedImage = nullptr;
-                }
                 glDeleteTextures(1, &img.texture);
                 return true;
             }
@@ -580,6 +644,15 @@ void ShowImageViewer(bool* p_open)
     ImGui::End();
 
     // Show the control panel for the selected image
+    Image* selectedImage = nullptr;
+    for (auto& img : images)
+    {
+        if (img.selected)
+        {
+            selectedImage = &img;
+            break;
+        }
+    }
     ShowControlPanel(selectedImage);
 
     if (show_metrics)
