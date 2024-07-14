@@ -1,0 +1,17 @@
+# Build directory
+build/
+
+# Compiled object files
+*.o
+*.obj
+
+# Executables
+*.exe
+*.out
+
+# IDE-specific files (adjust as needed)
+.vscode/
+.idea/
+
+# macOS-specific files
+.DS_Store
