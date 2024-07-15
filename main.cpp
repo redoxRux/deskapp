@@ -145,6 +145,22 @@ Image CreateImageCopy(const Image& original)
     return copy;
 }
 
+// Helper function to draw a button and handle clicks
+bool DrawButton(ImDrawList* draw_list, float x, float y, float width, float height, const char* label)
+{
+    ImVec2 buttonMin(x, y);
+    ImVec2 buttonMax(x + width, y + height);
+    ImVec2 mousePos = ImGui::GetMousePos();
+    bool isHovered = mousePos.x >= buttonMin.x && mousePos.x <= buttonMax.x &&
+                     mousePos.y >= buttonMin.y && mousePos.y <= buttonMax.y;
+
+    ImU32 buttonColor = isHovered ? IM_COL32(100, 100, 100, 255) : IM_COL32(70, 70, 70, 255);
+    draw_list->AddRectFilled(buttonMin, buttonMax, buttonColor, 3.0f);
+    draw_list->AddText(ImVec2(x + 5, y + 3), IM_COL32(255, 255, 255, 255), label);
+
+    return isHovered && ImGui::IsMouseClicked(0);
+}
+
 void ShowControlPanel(Image* selectedImage)
 {
     ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 200, 0));
@@ -328,6 +344,8 @@ void DisplayImage(Image& img, bool& imageClicked)
     static ImVec2 zoomStartPos;
     static float zoomStartValue;
 
+    bool buttonClicked = false;
+
     // Draw zoom control boxes and handle zooming only if the image is selected
     if (img.selected)
     {
@@ -433,10 +451,75 @@ void DisplayImage(Image& img, bool& imageClicked)
             bottomRight,
             IM_COL32(180, 190, 254, 255), 0.0f, 15, 2.0f
         );
+
+        // Draw control buttons on the top border of the selected image
+        float buttonWidth = 60.0f;
+        float buttonHeight = 20.0f;
+        float buttonSpacing = 5.0f;
+        float buttonsStartX = topLeft.x;
+        float buttonsY = topLeft.y - buttonHeight - 5.0f;
+
+        // Mirror button
+        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, img.mirrored ? "Reset Mirror" : "Mirror"))
+        {
+            undoStates.push_back({images, nextUploadOrder});
+            redoStates.clear();
+            img.mirrored = !img.mirrored;
+            buttonClicked = true;
+        }
+        buttonsStartX += buttonWidth + buttonSpacing;
+
+        // Eraser/Move button
+        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, img.eraserMode ? "Move" : "Eraser"))
+        {
+            undoStates.push_back({images, nextUploadOrder});
+            redoStates.clear();
+            img.eraserMode = !img.eraserMode;
+            buttonClicked = true;
+        }
+        buttonsStartX += buttonWidth + buttonSpacing;
+
+        // Copy button
+        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Copy"))
+        {
+            undoStates.push_back({images, nextUploadOrder});
+            redoStates.clear();
+            Image copy = CreateImageCopy(img);
+            images.push_back(copy);
+            buttonClicked = true;
+        }
+        buttonsStartX += buttonWidth + buttonSpacing;
+
+        // Delete button
+        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Delete"))
+        {
+            undoStates.push_back({images, nextUploadOrder});
+            redoStates.clear();
+            img.open = false;
+            buttonClicked = true;
+        }
+        buttonsStartX += buttonWidth + buttonSpacing;
+
+        // Move to Back button
+        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "To Back"))
+        {
+            undoStates.push_back({images, nextUploadOrder});
+            redoStates.clear();
+            int lowestOrder = std::numeric_limits<int>::max();
+            for (const auto& otherImg : images)
+            {
+                if (otherImg.uploadOrder < lowestOrder)
+                {
+                    lowestOrder = otherImg.uploadOrder;
+                }
+            }
+            img.uploadOrder = lowestOrder - 1;
+            buttonClicked = true;
+        }
     }
 
     // Handle image selection
-    if (isHovered && ImGui::IsMouseClicked(0) && !imageClicked && !isInteractingWithZoomControl)
+    if (isHovered && ImGui::IsMouseClicked(0) && !imageClicked && !isInteractingWithZoomControl && !buttonClicked)
     {
         img.selected = true;
         imageClicked = true;
@@ -451,7 +534,7 @@ void DisplayImage(Image& img, bool& imageClicked)
         img.activeZoomCorner = -1;
     }
 
-    if (draggedImage == &img && ImGui::IsMouseDown(0) && !isInteractingWithZoomControl)
+    if (draggedImage == &img && ImGui::IsMouseDown(0) && !isInteractingWithZoomControl && !buttonClicked)
     {
         if (img.eraserMode)
         {
@@ -470,6 +553,9 @@ void DisplayImage(Image& img, bool& imageClicked)
 
     // Reset hover state
     img.isHoveringZoomControl = false;
+
+    // Set imageClicked if any interaction occurred
+    imageClicked = imageClicked || buttonClicked || isInteractingWithZoomControl;
 }
 
 
