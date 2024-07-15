@@ -563,7 +563,7 @@ void DisplayImage(Image& img, bool& imageClicked)
 void ShowImageViewer(bool* p_open)
 {
     ImGui::SetNextWindowPos(ImVec2(0, 0));
-    ImGui::SetNextWindowSize(ImVec2(ImGui::GetIO().DisplaySize.x - 200, ImGui::GetIO().DisplaySize.y));
+    ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::Begin("Image Viewer", p_open, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);
 
     ImGui::Text("Welcome to the Advanced Image Viewer!");
@@ -757,18 +757,6 @@ void ShowImageViewer(bool* p_open)
     ImGui::EndChild();
 
     ImGui::End();
-
-    // Show the control panel for the selected image
-    Image* selectedImage = nullptr;
-    for (auto& img : images)
-    {
-        if (img.selected)
-        {
-            selectedImage = &img;
-            break;
-        }
-    }
-    ShowControlPanel(selectedImage);
 
     if (show_metrics)
     {
