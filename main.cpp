@@ -146,7 +146,7 @@ Image CreateImageCopy(const Image& original)
 }
 
 // Helper function to draw a button and handle clicks
-bool DrawButton(ImDrawList* draw_list, float x, float y, float width, float height, const char* label)
+bool DrawButton(ImDrawList* draw_list, float x, float y, float width, float height, const char* label, ImU32 color = IM_COL32(70, 70, 70, 255))
 {
     ImVec2 buttonMin(x, y);
     ImVec2 buttonMax(x + width, y + height);
@@ -154,7 +154,7 @@ bool DrawButton(ImDrawList* draw_list, float x, float y, float width, float heig
     bool isHovered = mousePos.x >= buttonMin.x && mousePos.x <= buttonMax.x &&
                      mousePos.y >= buttonMin.y && mousePos.y <= buttonMax.y;
 
-    ImU32 buttonColor = isHovered ? IM_COL32(100, 100, 100, 255) : IM_COL32(70, 70, 70, 255);
+    ImU32 buttonColor = isHovered ? IM_COL32(153, 153, 153, 255) : color;  // Lighter gray when hovered
     draw_list->AddRectFilled(buttonMin, buttonMax, buttonColor, 3.0f);
     draw_list->AddText(ImVec2(x + 5, y + 3), IM_COL32(255, 255, 255, 255), label);
 
@@ -352,8 +352,9 @@ void DisplayImage(Image& img, bool& imageClicked)
         }
         buttonsStartX += buttonWidth + buttonSpacing;
 
-        // Eraser/Move button
-        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, img.eraserMode ? "Move" : "Eraser"))
+        // Eraser button
+        ImU32 eraserButtonColor = img.eraserMode ? IM_COL32(180, 190, 254, 255) : IM_COL32(70, 70, 70, 255);
+        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Eraser", eraserButtonColor))
         {
             undoStates.push_back({images, nextUploadOrder});
             redoStates.clear();
