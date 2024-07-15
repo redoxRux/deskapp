@@ -334,10 +334,10 @@ void DisplayImage(Image& img, bool& imageClicked)
         ImU32 boxHoverColor = IM_COL32(255, 255, 255, 255);
 
         ImVec2 zoomCorners[4] = {
-            ImVec2(topLeft.x - boxSize - boxOffset, topLeft.y - boxSize - boxOffset),
-            ImVec2(bottomRight.x + boxOffset, topLeft.y - boxSize - boxOffset),
-            ImVec2(bottomRight.x + boxOffset, bottomRight.y + boxOffset),
-            ImVec2(topLeft.x - boxSize - boxOffset, bottomRight.y + boxOffset)
+            ImVec2(topLeft.x - boxSize - boxOffset, topLeft.y - boxSize - boxOffset),      // A
+            ImVec2(bottomRight.x + boxOffset, topLeft.y - boxSize - boxOffset),            // B
+            ImVec2(bottomRight.x + boxOffset, bottomRight.y + boxOffset),                  // C
+            ImVec2(topLeft.x - boxSize - boxOffset, bottomRight.y + boxOffset)             // D
         };
 
         for (int i = 0; i < 4; ++i)
@@ -373,12 +373,24 @@ void DisplayImage(Image& img, bool& imageClicked)
             float dragDistance = sqrtf(dragDelta.x * dragDelta.x + dragDelta.y * dragDelta.y);
             float zoomFactor = 1.0f + dragDistance * 0.01f;
 
-            if ((dragDelta.x < 0 && img.activeZoomCorner == 1) || 
-                (dragDelta.x > 0 && img.activeZoomCorner == 0) ||
-                (dragDelta.y < 0 && img.activeZoomCorner == 2) ||
-                (dragDelta.y > 0 && img.activeZoomCorner == 3))
+            bool shouldZoomOut = false;
+            switch (img.activeZoomCorner) {
+                case 0: // A
+                    shouldZoomOut = dragDelta.x > 0 || dragDelta.y > 0;
+                    break;
+                case 1: // B
+                    shouldZoomOut = dragDelta.x < 0 || dragDelta.y > 0;
+                    break;
+                case 2: // C
+                    shouldZoomOut = dragDelta.x < 0 || dragDelta.y < 0;
+                    break;
+                case 3: // D
+                    shouldZoomOut = dragDelta.x > 0 || dragDelta.y < 0;
+                    break;
+            }
+
+            if (shouldZoomOut)
             {
-                // Zoom out
                 zoomFactor = 1.0f / zoomFactor;
             }
 
