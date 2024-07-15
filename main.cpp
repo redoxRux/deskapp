@@ -268,6 +268,9 @@ void DisplayImage(Image& img, bool& imageClicked)
     img.position.x = img.position.x * 0.9f + img.targetPosition.x * 0.1f;
     img.position.y = img.position.y * 0.9f + img.targetPosition.y * 0.1f;
 
+    static float targetZoom = img.zoom;
+    static ImVec2 lastMousePos;
+
     ImVec2 uv_min = img.mirrored ? ImVec2(1.0f, 0.0f) : ImVec2(0.0f, 0.0f);
     ImVec2 uv_max = img.mirrored ? ImVec2(0.0f, 1.0f) : ImVec2(1.0f, 1.0f);
     ImVec2 scaled_size = ImVec2(img.width * img.zoom, img.height * img.zoom);
@@ -358,6 +361,7 @@ void DisplayImage(Image& img, bool& imageClicked)
                     img.activeZoomCorner = i;
                     zoomStartPos = ImGui::GetMousePos();
                     zoomStartValue = img.zoom;
+                    targetZoom = img.zoom;
                     imageClicked = true;  // Prevent deselection
                 }
             }
@@ -371,7 +375,10 @@ void DisplayImage(Image& img, bool& imageClicked)
             
             // Calculate zoom based on drag distance from start point
             float dragDistance = sqrtf(dragDelta.x * dragDelta.x + dragDelta.y * dragDelta.y);
-            float zoomFactor = 1.0f + dragDistance * 0.01f;
+            
+            // Reduce zoom sensitivity
+            float zoomSensitivity = 0.005f;
+            float zoomFactor = 1.0f + dragDistance * zoomSensitivity;
 
             bool shouldZoomOut = false;
             switch (img.activeZoomCorner) {
@@ -394,21 +401,31 @@ void DisplayImage(Image& img, bool& imageClicked)
                 zoomFactor = 1.0f / zoomFactor;
             }
 
-            float newZoom = zoomStartValue * zoomFactor;
-            newZoom = std::max(0.1f, std::min(newZoom, 5.0f));  // Clamp zoom between 0.1 and 5.0
+            // Update target zoom instead of directly updating img.zoom
+            targetZoom = zoomStartValue * zoomFactor;
+            targetZoom = std::max(0.1f, std::min(targetZoom, 5.0f));  // Clamp zoom between 0.1 and 5.0
 
-            // Calculate zoom center (use the center of the image for simplicity)
-            ImVec2 zoomCenter = center;
+            // Calculate zoom center based on the active corner
+            ImVec2 zoomCenter;
+            switch (img.activeZoomCorner) {
+                case 0: zoomCenter = corners[2]; break;
+                case 1: zoomCenter = corners[3]; break;
+                case 2: zoomCenter = corners[0]; break;
+                case 3: zoomCenter = corners[1]; break;
+            }
 
             // Calculate the offset of the zoom center from the image position
             ImVec2 centerOffset = ImVec2(zoomCenter.x - img.position.x, zoomCenter.y - img.position.y);
 
             // Calculate new position to keep the zoom center stationary
-            img.targetPosition.x = zoomCenter.x - centerOffset.x * (newZoom / img.zoom);
-            img.targetPosition.y = zoomCenter.y - centerOffset.y * (newZoom / img.zoom);
+            img.targetPosition.x = zoomCenter.x - centerOffset.x * (targetZoom / img.zoom);
+            img.targetPosition.y = zoomCenter.y - centerOffset.y * (targetZoom / img.zoom);
 
-            img.zoom = newZoom;
+            lastMousePos = ImGui::GetMousePos();
         }
+
+        // Smooth zoom interpolation
+        img.zoom = img.zoom * 0.9f + targetZoom * 0.1f;
 
         // Draw selection box around the selected image
         draw_list->AddRect(
