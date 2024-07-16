@@ -52,8 +52,8 @@ float gridScale = 1.0f;
 // Add this function to draw the grid
 void DrawGrid(ImDrawList* draw_list, const ImVec2& windowPos, const ImVec2& windowSize)
 {
-    const float baseSpacing = 20.0f; // Base spacing between dots
-    const float baseSize = 2.0f; // Base size of dots
+    const float baseSpacing = 36.0f; // Base spacing between dots
+    const float baseSize = 0.9f; // Base size of dots
     const ImU32 dotColor = IM_COL32(179, 179, 204, 255); // catpuccin dot
     float spacing = baseSpacing * gridScale;
     float size = baseSize * gridScale;
@@ -406,6 +406,13 @@ void ShowImageViewer(bool* p_open)
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::Begin("Image Viewer", p_open, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);
 
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 windowPos = ImGui::GetWindowPos();
+    ImVec2 windowSize = ImGui::GetIO().DisplaySize;
+
+    // Draw the grid for the entire window
+    DrawGrid(draw_list, windowPos, windowSize);
+
     ImGui::Text("Welcome to the Advanced Image Viewer!");
 
     if (ImGui::Button("Load Image"))
@@ -541,13 +548,6 @@ void ShowImageViewer(bool* p_open)
 
     ImGui::BeginChild("ImageDisplayArea", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
     
-    ImDrawList* draw_list = ImGui::GetWindowDrawList();
-    ImVec2 windowPos = ImGui::GetWindowPos();
-    ImVec2 windowSize = ImGui::GetWindowSize();
-
-    // Draw the grid
-    DrawGrid(draw_list, windowPos, windowSize);
-
     // Sort images based on upload order (ascending)
     std::sort(images.begin(), images.end(), [](const Image& a, const Image& b) {
         return a.uploadOrder < b.uploadOrder;
