@@ -245,16 +245,10 @@ void DisplayImage(Image& img, bool& imageClicked)
         uv_min, ImVec2(uv_max.x, uv_min.y), uv_max, ImVec2(uv_min.x, uv_max.y)
     );
 
-    // Custom hit-testing and interaction logic
+    // Custom hit-testing logic
     ImVec2 mousePos = ImGui::GetMousePos();
     bool isHovered = mousePos.x >= topLeft.x && mousePos.x <= bottomRight.x &&
                      mousePos.y >= topLeft.y && mousePos.y <= bottomRight.y;
-
-    static Image* draggedImage = nullptr;
-    static ImVec2 dragStartPos;
-    static ImVec2 imageDragStartPos;
-
-    bool isInteractingWithZoomControl = false;
 
     // Draw zoom control boxes and handle zooming only if the image is selected
     if (img.selected)
@@ -281,16 +275,12 @@ void DisplayImage(Image& img, bool& imageClicked)
 
             draw_list->AddRectFilled(boxMin, boxMax, color);
 
-            if (isHovering)
+            if (isHovering && ImGui::IsMouseClicked(0))
             {
-                isInteractingWithZoomControl = true;
-                if (ImGui::IsMouseClicked(0))
-                {
-                    img.activeZoomCorner = i;
-                    img.zoomStartPos = ImGui::GetMousePos();
-                    img.zoomStartValue = img.zoom;
-                    imageClicked = true;  // Prevent deselection
-                }
+                img.activeZoomCorner = i;
+                img.zoomStartPos = ImGui::GetMousePos();
+                img.zoomStartValue = img.zoom;
+                imageClicked = true;
             }
         }
 
@@ -300,98 +290,33 @@ void DisplayImage(Image& img, bool& imageClicked)
             ImVec2 dragDelta = ImVec2(ImGui::GetMousePos().x - img.zoomStartPos.x, 
                                       ImGui::GetMousePos().y - img.zoomStartPos.y);
             
-            // Calculate zoom based on drag distance from start point
             float dragDistance = sqrtf(dragDelta.x * dragDelta.x + dragDelta.y * dragDelta.y);
-            
-            // Reduce zoom sensitivity
             float zoomSensitivity = 0.005f;
             float zoomFactor = 1.0f + dragDistance * zoomSensitivity;
 
             bool shouldZoomOut = false;
             switch (img.activeZoomCorner) {
-                case 0: // A
-                    shouldZoomOut = dragDelta.x > 0 || dragDelta.y > 0;
-                    break;
-                case 1: // B
-                    shouldZoomOut = dragDelta.x < 0 || dragDelta.y > 0;
-                    break;
-                case 2: // C
-                    shouldZoomOut = dragDelta.x < 0 || dragDelta.y < 0;
-                    break;
-                case 3: // D
-                    shouldZoomOut = dragDelta.x > 0 || dragDelta.y < 0;
-                    break;
+                case 0: shouldZoomOut = dragDelta.x > 0 || dragDelta.y > 0; break;
+                case 1: shouldZoomOut = dragDelta.x < 0 || dragDelta.y > 0; break;
+                case 2: shouldZoomOut = dragDelta.x < 0 || dragDelta.y < 0; break;
+                case 3: shouldZoomOut = dragDelta.x > 0 || dragDelta.y < 0; break;
             }
 
-            if (shouldZoomOut)
-            {
-                zoomFactor = 1.0f / zoomFactor;
-            }
+            if (shouldZoomOut) zoomFactor = 1.0f / zoomFactor;
 
-            // Update zoom
             float newZoom = img.zoomStartValue * zoomFactor;
             newZoom = std::max(0.1f, std::min(newZoom, 5.0f));  // Clamp zoom between 0.1 and 5.0
 
-            // Calculate zoom center
             ImVec2 zoomCenter = zoomCorners[img.activeZoomCorner];
-
-            // Calculate the offset of the zoom center from the image position
             ImVec2 centerOffset = ImVec2(zoomCenter.x - img.position.x, zoomCenter.y - img.position.y);
 
-            // Calculate new position to keep the zoom center stationary
             img.targetPosition.x = zoomCenter.x - centerOffset.x * (newZoom / img.zoom);
             img.targetPosition.y = zoomCenter.y - centerOffset.y * (newZoom / img.zoom);
 
             img.zoom = newZoom;
         }
 
-        // Draw selection box around the selected image
-        draw_list->AddRect(
-            topLeft,
-            bottomRight,
-            IM_COL32(180, 190, 254, 255), 0.0f, 15, 2.0f
-        );
-    }
-
-    // Handle image selection
-    if (isHovered && ImGui::IsMouseClicked(0) && !imageClicked && !isInteractingWithZoomControl)
-    {
-        img.selected = true;
-        imageClicked = true;
-        draggedImage = &img;
-        dragStartPos = ImGui::GetMousePos();
-        imageDragStartPos = img.position;
-    }
-
-    if (ImGui::IsMouseReleased(0))
-    {
-        draggedImage = nullptr;
-        img.activeZoomCorner = -1;
-    }
-
-    if (draggedImage == &img && ImGui::IsMouseDown(0) && !isInteractingWithZoomControl)
-    {
-        if (img.eraserMode)
-        {
-            EraseImagePart(img, mousePos);
-        }
-        else
-        {
-            ImVec2 dragDelta = ImVec2(ImGui::GetMousePos().x - dragStartPos.x,
-                                      ImGui::GetMousePos().y - dragStartPos.y);
-            
-            float smoothFactor = 1.0f;  // Direct movement
-            img.targetPosition.x = imageDragStartPos.x + dragDelta.x * smoothFactor;
-            img.targetPosition.y = imageDragStartPos.y + dragDelta.y * smoothFactor;
-        }
-    }
-
-    // Reset hover state
-    img.isHoveringZoomControl = false;
-
-    // Draw buttons
-    if (img.selected)
-    {
+        // Draw buttons
         float buttonWidth = 60.0f;
         float buttonHeight = 20.0f;
         float buttonSpacing = 5.0f;
@@ -447,6 +372,26 @@ void DisplayImage(Image& img, bool& imageClicked)
             img.uploadOrder = lowestOrder - 1;
             imageClicked = true;
         }
+
+        // Draw selection box around the selected image
+        draw_list->AddRect(
+            topLeft,
+            bottomRight,
+            IM_COL32(180, 190, 254, 255), 0.0f, 15, 2.0f
+        );
+    }
+
+    // Handle eraser mode
+    if (img.selected && img.eraserMode && isHovered && ImGui::IsMouseDown(0))
+    {
+        EraseImagePart(img, mousePos);
+        imageClicked = true;
+    }
+
+    // Reset active zoom corner if mouse is released
+    if (ImGui::IsMouseReleased(0))
+    {
+        img.activeZoomCorner = -1;
     }
 }
 
@@ -455,6 +400,8 @@ void DisplayImage(Image& img, bool& imageClicked)
 void ShowImageViewer(bool* p_open)
 {
     static Image* selectedImage = nullptr;
+    static Image* draggedImage = nullptr;
+    static ImVec2 dragStartPos;
 
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
@@ -527,6 +474,7 @@ void ShowImageViewer(bool* p_open)
         images.clear();
         nextUploadOrder = 0;
         selectedImage = nullptr;
+        draggedImage = nullptr;
     }
 
     ImGui::SameLine();
@@ -556,6 +504,7 @@ void ShowImageViewer(bool* p_open)
         }
 
         selectedImage = nullptr;
+        draggedImage = nullptr;
     }
 
     ImGui::SameLine();
@@ -585,6 +534,7 @@ void ShowImageViewer(bool* p_open)
         }
 
         selectedImage = nullptr;
+        draggedImage = nullptr;
     }
 
     ImGui::SameLine();
@@ -624,12 +574,14 @@ void ShowImageViewer(bool* p_open)
         }
     }
 
-    // Handle selection
-    if (ImGui::IsMouseClicked(0))
+    // Handle selection and start of dragging
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
     {
         if (hoveredImage)
         {
             selectedImage = hoveredImage;
+            draggedImage = hoveredImage;
+            dragStartPos = ImGui::GetMousePos();
             for (auto& img : images)
             {
                 img.selected = (&img == selectedImage);
@@ -639,11 +591,27 @@ void ShowImageViewer(bool* p_open)
         {
             // Deselect all images when clicking on empty space
             selectedImage = nullptr;
+            draggedImage = nullptr;
             for (auto& img : images)
             {
                 img.selected = false;
             }
         }
+    }
+
+    // Handle dragging
+    if (ImGui::IsMouseDragging(ImGuiMouseButton_Left) && draggedImage)
+    {
+        ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
+        draggedImage->targetPosition.x += dragDelta.x;
+        draggedImage->targetPosition.y += dragDelta.y;
+        ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
+    }
+
+    // Reset dragged image when mouse is released
+    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+    {
+        draggedImage = nullptr;
     }
 
     // Update grid offset based on pan operations
@@ -668,6 +636,9 @@ void ShowImageViewer(bool* p_open)
             if (!img.open) {
                 if (&img == selectedImage) {
                     selectedImage = nullptr;
+                }
+                if (&img == draggedImage) {
+                    draggedImage = nullptr;
                 }
                 glDeleteTextures(1, &img.texture);
                 return true;
