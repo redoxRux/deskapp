@@ -52,29 +52,57 @@ float gridScale = 1.0f;
 // Add this function to draw the grid
 void DrawGrid(ImDrawList* draw_list, const ImVec2& windowPos, const ImVec2& windowSize)
 {
+    // Draw background
+    draw_list->AddRectFilled(windowPos, ImVec2(windowPos.x + windowSize.x, windowPos.y + windowSize.y), IM_COL32(18, 18, 28, 255));
+
     const float baseSpacing = 36.0f; // Base spacing between dots
-    const float baseSize = 0.9f; // Base size of dots
-    const ImU32 dotColor = IM_COL32(179, 179, 204, 255); // catpuccin dot
+    const float baseSize = 1.0f; // Base size of dots
+    const ImU32 dotColor = IM_COL32(179, 179, 204, 255);
+
     float spacing = baseSpacing * gridScale;
     float size = baseSize * gridScale;
-    size = std::min(std::max(size, 1.0f), 5.0f); // Clamp size between 1 and 5
-    draw_list->AddRectFilled(windowPos, ImVec2(windowPos.x + windowSize.x, windowPos.y + windowSize.y), IM_COL32(18, 18, 28, 255));
+
+    // Implement a more balanced culling
+    const int maxDotsPerDimension = 300; // Increased for more detail
+    const float minSpacing = 10.0f; // Minimum spacing between dots
+
+    if (spacing < minSpacing)
+    {
+        int factor = static_cast<int>(minSpacing / spacing) + 1;
+        spacing *= factor;
+        size *= std::sqrt(factor); // Increase dot size when spacing increases
+    }
+
+    // Ensure a minimum visible size for dots
+    const float minVisibleSize = 0.5f;
+    size = std::max(size, minVisibleSize);
+
     ImVec2 offset = ImVec2(
         fmodf(gridOffset.x, spacing),
         fmodf(gridOffset.y, spacing)
     );
 
-    for (float x = offset.x; x < windowSize.x; x += spacing)
+    int dotsDrawn = 0;
+    for (float x = offset.x - spacing; x < windowSize.x + spacing; x += spacing)
     {
-        for (float y = offset.y; y < windowSize.y; y += spacing)
+        for (float y = offset.y - spacing; y < windowSize.y + spacing; y += spacing)
         {
             draw_list->AddCircleFilled(
                 ImVec2(windowPos.x + x, windowPos.y + y),
                 size / 2,
                 dotColor
             );
+
+            dotsDrawn++;
+            if (dotsDrawn > maxDotsPerDimension * maxDotsPerDimension)
+            {
+                goto endDrawing; // Exit both loops if we've drawn too many dots
+            }
         }
     }
+
+endDrawing:
+    // You can add any cleanup or final operations here if needed
 }
 
 GLuint CreateTextureFromData(const std::vector<unsigned char>& data, int width, int height)
