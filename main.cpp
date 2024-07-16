@@ -54,12 +54,11 @@ void DrawGrid(ImDrawList* draw_list, const ImVec2& windowPos, const ImVec2& wind
 {
     const float baseSpacing = 20.0f; // Base spacing between dots
     const float baseSize = 2.0f; // Base size of dots
-    const ImU32 dotColor = IM_COL32(180, 180, 200, 100); // Light gray, semi-transparent
-
+    const ImU32 dotColor = IM_COL32(179, 179, 204, 255); // catpuccin dot
     float spacing = baseSpacing * gridScale;
     float size = baseSize * gridScale;
     size = std::min(std::max(size, 1.0f), 5.0f); // Clamp size between 1 and 5
-
+    draw_list->AddRectFilled(windowPos, ImVec2(windowPos.x + windowSize.x, windowPos.y + windowSize.y), IM_COL32(18, 18, 28, 255));
     ImVec2 offset = ImVec2(
         fmodf(gridOffset.x, spacing),
         fmodf(gridOffset.y, spacing)
