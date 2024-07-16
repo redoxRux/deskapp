@@ -46,6 +46,38 @@ struct ImageState {
 std::vector<ImageState> undoStates;
 std::vector<ImageState> redoStates;
 
+ImVec2 gridOffset(0.0f, 0.0f);
+float gridScale = 1.0f;
+
+// Add this function to draw the grid
+void DrawGrid(ImDrawList* draw_list, const ImVec2& windowPos, const ImVec2& windowSize)
+{
+    const float baseSpacing = 20.0f; // Base spacing between dots
+    const float baseSize = 2.0f; // Base size of dots
+    const ImU32 dotColor = IM_COL32(180, 180, 200, 100); // Light gray, semi-transparent
+
+    float spacing = baseSpacing * gridScale;
+    float size = baseSize * gridScale;
+    size = std::min(std::max(size, 1.0f), 5.0f); // Clamp size between 1 and 5
+
+    ImVec2 offset = ImVec2(
+        fmodf(gridOffset.x, spacing),
+        fmodf(gridOffset.y, spacing)
+    );
+
+    for (float x = offset.x; x < windowSize.x; x += spacing)
+    {
+        for (float y = offset.y; y < windowSize.y; y += spacing)
+        {
+            draw_list->AddCircleFilled(
+                ImVec2(windowPos.x + x, windowPos.y + y),
+                size / 2,
+                dotColor
+            );
+        }
+    }
+}
+
 GLuint CreateTextureFromData(const std::vector<unsigned char>& data, int width, int height)
 {
     GLuint texture;
@@ -560,32 +592,31 @@ void ShowImageViewer(bool* p_open)
 
     ImGui::BeginChild("ImageDisplayArea", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
     
+    ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImVec2 windowPos = ImGui::GetWindowPos();
+    ImVec2 windowSize = ImGui::GetWindowSize();
+
+    // Draw the grid
+    DrawGrid(draw_list, windowPos, windowSize);
+
     // Sort images based on upload order (ascending)
     std::sort(images.begin(), images.end(), [](const Image& a, const Image& b) {
         return a.uploadOrder < b.uploadOrder;
     });
 
     ImVec2 mousePos = ImGui::GetMousePos();
-    ImVec2 windowPos = ImGui::GetWindowPos();
     ImVec2 relativeMousePos = ImVec2(mousePos.x - windowPos.x, mousePos.y - windowPos.y);
 
     Image* hoveredImage = nullptr;
     bool imageClicked = false;
 
-    // Render all images and determine the topmost hovered image
+    // Display all images and find the topmost hovered image
     for (auto& img : images)
     {
         if (img.open)
         {
-            bool currentImageClicked = false;
-            DisplayImage(img, currentImageClicked);
-            
-            if (currentImageClicked)
-            {
-                imageClicked = true;
-            }
+            DisplayImage(img, imageClicked);
 
-            // Check if this image is under the cursor
             if (IsPointInImage(img, relativeMousePos))
             {
                 hoveredImage = &img;
@@ -593,7 +624,7 @@ void ShowImageViewer(bool* p_open)
         }
     }
 
-    // Handle selection only for the topmost hovered image
+    // Handle selection
     if (ImGui::IsMouseClicked(0))
     {
         if (hoveredImage)
@@ -615,7 +646,23 @@ void ShowImageViewer(bool* p_open)
         }
     }
 
-    // Remove closed images
+    // Update grid offset based on pan operations
+    if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle))
+    {
+        ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Middle);
+        gridOffset.x += dragDelta.x;
+        gridOffset.y += dragDelta.y;
+        ImGui::ResetMouseDragDelta(ImGuiMouseButton_Middle);
+    }
+
+    // Update grid scale based on zoom operations
+    float mouseWheel = ImGui::GetIO().MouseWheel;
+    if (mouseWheel != 0.0f)
+    {
+        gridScale *= (1.0f + mouseWheel * 0.1f);
+        gridScale = std::max(0.1f, gridScale); // Prevent scale from going negative or zero
+    }
+
     images.erase(std::remove_if(images.begin(), images.end(),
         [&](const Image& img) { 
             if (!img.open) {
