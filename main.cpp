@@ -446,6 +446,8 @@ void DisplayImage(Image& img, bool& imageClicked)
 
 void ShowImageViewer(bool* p_open)
 {
+    static Image* selectedImage = nullptr;
+
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::Begin("Image Viewer", p_open, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoResize);
@@ -516,6 +518,7 @@ void ShowImageViewer(bool* p_open)
         }
         images.clear();
         nextUploadOrder = 0;
+        selectedImage = nullptr;
     }
 
     ImGui::SameLine();
@@ -543,6 +546,8 @@ void ShowImageViewer(bool* p_open)
         {
             img.texture = CreateTextureFromData(img.data, img.width, img.height);
         }
+
+        selectedImage = nullptr;
     }
 
     ImGui::SameLine();
@@ -570,6 +575,8 @@ void ShowImageViewer(bool* p_open)
         {
             img.texture = CreateTextureFromData(img.data, img.width, img.height);
         }
+
+        selectedImage = nullptr;
     }
 
     ImGui::SameLine();
@@ -586,18 +593,23 @@ void ShowImageViewer(bool* p_open)
     ImVec2 windowPos = ImGui::GetWindowPos();
     ImVec2 relativeMousePos = ImVec2(mousePos.x - windowPos.x, mousePos.y - windowPos.y);
 
-    bool imageClicked = false;
-    bool clickedOutside = ImGui::IsMouseClicked(0) && ImGui::IsWindowHovered();
-
     Image* hoveredImage = nullptr;
+    bool imageClicked = false;
 
-    // Display all images and find the topmost hovered image
+    // Render all images and determine the topmost hovered image
     for (auto& img : images)
     {
         if (img.open)
         {
-            DisplayImage(img, imageClicked);
+            bool currentImageClicked = false;
+            DisplayImage(img, currentImageClicked);
+            
+            if (currentImageClicked)
+            {
+                imageClicked = true;
+            }
 
+            // Check if this image is under the cursor
             if (IsPointInImage(img, relativeMousePos))
             {
                 hoveredImage = &img;
@@ -605,23 +617,21 @@ void ShowImageViewer(bool* p_open)
         }
     }
 
-    // Handle selection and deselection
+    // Handle selection only for the topmost hovered image
     if (ImGui::IsMouseClicked(0))
     {
         if (hoveredImage)
         {
-            hoveredImage->selected = true;
+            selectedImage = hoveredImage;
             for (auto& img : images)
             {
-                if (&img != hoveredImage)
-                {
-                    img.selected = false;
-                }
+                img.selected = (&img == selectedImage);
             }
         }
-        else if (clickedOutside && !imageClicked)
+        else if (!imageClicked)
         {
             // Deselect all images when clicking on empty space
+            selectedImage = nullptr;
             for (auto& img : images)
             {
                 img.selected = false;
@@ -629,9 +639,13 @@ void ShowImageViewer(bool* p_open)
         }
     }
 
+    // Remove closed images
     images.erase(std::remove_if(images.begin(), images.end(),
         [&](const Image& img) { 
             if (!img.open) {
+                if (&img == selectedImage) {
+                    selectedImage = nullptr;
+                }
                 glDeleteTextures(1, &img.texture);
                 return true;
             }
