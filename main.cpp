@@ -429,6 +429,8 @@ void ShowImageViewer(bool* p_open)
     static Image* selectedImage = nullptr;
     static Image* draggedImage = nullptr;
     static ImVec2 dragStartPos;
+    static bool isGrabbingGrid = false;
+    static ImVec2 gridGrabStartPos;
 
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
@@ -616,6 +618,10 @@ void ShowImageViewer(bool* p_open)
         }
         else if (!imageClicked)
         {
+            // Start grabbing the grid
+            isGrabbingGrid = true;
+            gridGrabStartPos = ImGui::GetMousePos();
+            
             // Deselect all images when clicking on empty space
             selectedImage = nullptr;
             draggedImage = nullptr;
@@ -627,35 +633,46 @@ void ShowImageViewer(bool* p_open)
     }
 
     // Handle dragging
-    if (ImGui::IsMouseDragging(ImGuiMouseButton_Left) && draggedImage)
+    if (ImGui::IsMouseDragging(ImGuiMouseButton_Left))
     {
-        ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
-        draggedImage->targetPosition.x += dragDelta.x;
-        draggedImage->targetPosition.y += dragDelta.y;
-        ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
+        if (draggedImage)
+        {
+            ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
+            draggedImage->targetPosition.x += dragDelta.x;
+            draggedImage->targetPosition.y += dragDelta.y;
+            ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
+        }
+        else if (isGrabbingGrid)
+        {
+            ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
+            gridOffset.x += dragDelta.x;
+            gridOffset.y += dragDelta.y;
+            ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
+        }
     }
 
-    // Reset dragged image when mouse is released
+    // Reset dragged image and grid grabbing when mouse is released
     if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
     {
         draggedImage = nullptr;
-    }
-
-    // Update grid offset based on pan operations
-    if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle))
-    {
-        ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Middle);
-        gridOffset.x += dragDelta.x;
-        gridOffset.y += dragDelta.y;
-        ImGui::ResetMouseDragDelta(ImGuiMouseButton_Middle);
+        isGrabbingGrid = false;
     }
 
     // Update grid scale based on zoom operations
     float mouseWheel = ImGui::GetIO().MouseWheel;
     if (mouseWheel != 0.0f)
     {
-        gridScale *= (1.0f + mouseWheel * 0.1f);
+        float zoomFactor = 1.0f + mouseWheel * 0.1f;
+        gridScale *= zoomFactor;
         gridScale = std::max(0.1f, gridScale); // Prevent scale from going negative or zero
+
+        // Adjust gridOffset to zoom towards mouse position
+        ImVec2 mouseGridPos = ImVec2(
+            (mousePos.x - windowPos.x - gridOffset.x) / gridScale,
+            (mousePos.y - windowPos.y - gridOffset.y) / gridScale
+        );
+        gridOffset.x = mousePos.x - windowPos.x - mouseGridPos.x * gridScale * zoomFactor;
+        gridOffset.y = mousePos.y - windowPos.y - mouseGridPos.y * gridScale * zoomFactor;
     }
 
     images.erase(std::remove_if(images.begin(), images.end(),
