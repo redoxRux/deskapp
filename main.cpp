@@ -29,6 +29,8 @@ struct Image {
     float targetRotation; // New member for rotation angle
     bool isHoveringZoomControl;
     int activeZoomCorner;
+    ImVec2 zoomStartPos;
+    float zoomStartValue;
 };
 
 std::vector<Image> images;
@@ -167,9 +169,6 @@ void DisplayImage(Image& img, bool& imageClicked)
     img.position.x = img.position.x * 0.9f + img.targetPosition.x * 0.1f;
     img.position.y = img.position.y * 0.9f + img.targetPosition.y * 0.1f;
 
-    static float targetZoom = img.zoom;
-    static ImVec2 lastMousePos;
-
     ImVec2 uv_min = img.mirrored ? ImVec2(1.0f, 0.0f) : ImVec2(0.0f, 0.0f);
     ImVec2 uv_max = img.mirrored ? ImVec2(0.0f, 1.0f) : ImVec2(1.0f, 1.0f);
     ImVec2 scaled_size = ImVec2(img.width * img.zoom, img.height * img.zoom);
@@ -224,10 +223,6 @@ void DisplayImage(Image& img, bool& imageClicked)
     static ImVec2 imageDragStartPos;
 
     bool isInteractingWithZoomControl = false;
-    static ImVec2 zoomStartPos;
-    static float zoomStartValue;
-
-    bool buttonClicked = false;
 
     // Draw zoom control boxes and handle zooming only if the image is selected
     if (img.selected)
@@ -260,9 +255,8 @@ void DisplayImage(Image& img, bool& imageClicked)
                 if (ImGui::IsMouseClicked(0))
                 {
                     img.activeZoomCorner = i;
-                    zoomStartPos = ImGui::GetMousePos();
-                    zoomStartValue = img.zoom;
-                    targetZoom = img.zoom;
+                    img.zoomStartPos = ImGui::GetMousePos();
+                    img.zoomStartValue = img.zoom;
                     imageClicked = true;  // Prevent deselection
                 }
             }
@@ -271,8 +265,8 @@ void DisplayImage(Image& img, bool& imageClicked)
         // Handle zooming
         if (img.activeZoomCorner != -1 && ImGui::IsMouseDown(0))
         {
-            ImVec2 dragDelta = ImVec2(ImGui::GetMousePos().x - zoomStartPos.x, 
-                                      ImGui::GetMousePos().y - zoomStartPos.y);
+            ImVec2 dragDelta = ImVec2(ImGui::GetMousePos().x - img.zoomStartPos.x, 
+                                      ImGui::GetMousePos().y - img.zoomStartPos.y);
             
             // Calculate zoom based on drag distance from start point
             float dragDistance = sqrtf(dragDelta.x * dragDelta.x + dragDelta.y * dragDelta.y);
@@ -302,31 +296,22 @@ void DisplayImage(Image& img, bool& imageClicked)
                 zoomFactor = 1.0f / zoomFactor;
             }
 
-            // Update target zoom instead of directly updating img.zoom
-            targetZoom = zoomStartValue * zoomFactor;
-            targetZoom = std::max(0.1f, std::min(targetZoom, 5.0f));  // Clamp zoom between 0.1 and 5.0
+            // Update zoom
+            float newZoom = img.zoomStartValue * zoomFactor;
+            newZoom = std::max(0.1f, std::min(newZoom, 5.0f));  // Clamp zoom between 0.1 and 5.0
 
-            // Calculate zoom center based on the active corner
-            ImVec2 zoomCenter;
-            switch (img.activeZoomCorner) {
-                case 0: zoomCenter = corners[2]; break;
-                case 1: zoomCenter = corners[3]; break;
-                case 2: zoomCenter = corners[0]; break;
-                case 3: zoomCenter = corners[1]; break;
-            }
+            // Calculate zoom center
+            ImVec2 zoomCenter = zoomCorners[img.activeZoomCorner];
 
             // Calculate the offset of the zoom center from the image position
             ImVec2 centerOffset = ImVec2(zoomCenter.x - img.position.x, zoomCenter.y - img.position.y);
 
             // Calculate new position to keep the zoom center stationary
-            img.targetPosition.x = zoomCenter.x - centerOffset.x * (targetZoom / img.zoom);
-            img.targetPosition.y = zoomCenter.y - centerOffset.y * (targetZoom / img.zoom);
+            img.targetPosition.x = zoomCenter.x - centerOffset.x * (newZoom / img.zoom);
+            img.targetPosition.y = zoomCenter.y - centerOffset.y * (newZoom / img.zoom);
 
-            lastMousePos = ImGui::GetMousePos();
+            img.zoom = newZoom;
         }
-
-        // Smooth zoom interpolation
-        img.zoom = img.zoom * 0.9f + targetZoom * 0.1f;
 
         // Draw selection box around the selected image
         draw_list->AddRect(
@@ -334,76 +319,10 @@ void DisplayImage(Image& img, bool& imageClicked)
             bottomRight,
             IM_COL32(180, 190, 254, 255), 0.0f, 15, 2.0f
         );
-
-        // Draw control buttons on the top border of the selected image
-        float buttonWidth = 60.0f;
-        float buttonHeight = 20.0f;
-        float buttonSpacing = 5.0f;
-        float buttonsStartX = topLeft.x;
-        float buttonsY = topLeft.y - buttonHeight - 5.0f;
-
-        // Mirror button
-        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, img.mirrored ? "Reset Mirror" : "Mirror"))
-        {
-            undoStates.push_back({images, nextUploadOrder});
-            redoStates.clear();
-            img.mirrored = !img.mirrored;
-            buttonClicked = true;
-        }
-        buttonsStartX += buttonWidth + buttonSpacing;
-
-        // Eraser button
-        ImU32 eraserButtonColor = img.eraserMode ? IM_COL32(180, 190, 254, 255) : IM_COL32(70, 70, 70, 255);
-        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Eraser", eraserButtonColor))
-        {
-            undoStates.push_back({images, nextUploadOrder});
-            redoStates.clear();
-            img.eraserMode = !img.eraserMode;
-            buttonClicked = true;
-        }
-        buttonsStartX += buttonWidth + buttonSpacing;
-
-        // Copy button
-        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Copy"))
-        {
-            undoStates.push_back({images, nextUploadOrder});
-            redoStates.clear();
-            Image copy = CreateImageCopy(img);
-            images.push_back(copy);
-            buttonClicked = true;
-        }
-        buttonsStartX += buttonWidth + buttonSpacing;
-
-        // Delete button
-        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Delete"))
-        {
-            undoStates.push_back({images, nextUploadOrder});
-            redoStates.clear();
-            img.open = false;
-            buttonClicked = true;
-        }
-        buttonsStartX += buttonWidth + buttonSpacing;
-
-        // Move to Back button
-        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "To Back"))
-        {
-            undoStates.push_back({images, nextUploadOrder});
-            redoStates.clear();
-            int lowestOrder = std::numeric_limits<int>::max();
-            for (const auto& otherImg : images)
-            {
-                if (otherImg.uploadOrder < lowestOrder)
-                {
-                    lowestOrder = otherImg.uploadOrder;
-                }
-            }
-            img.uploadOrder = lowestOrder - 1;
-            buttonClicked = true;
-        }
     }
 
     // Handle image selection
-    if (isHovered && ImGui::IsMouseClicked(0) && !imageClicked && !isInteractingWithZoomControl && !buttonClicked)
+    if (isHovered && ImGui::IsMouseClicked(0) && !imageClicked && !isInteractingWithZoomControl)
     {
         img.selected = true;
         imageClicked = true;
@@ -418,7 +337,7 @@ void DisplayImage(Image& img, bool& imageClicked)
         img.activeZoomCorner = -1;
     }
 
-    if (draggedImage == &img && ImGui::IsMouseDown(0) && !isInteractingWithZoomControl && !buttonClicked)
+    if (draggedImage == &img && ImGui::IsMouseDown(0) && !isInteractingWithZoomControl)
     {
         if (img.eraserMode)
         {
@@ -438,8 +357,65 @@ void DisplayImage(Image& img, bool& imageClicked)
     // Reset hover state
     img.isHoveringZoomControl = false;
 
-    // Set imageClicked if any interaction occurred
-    imageClicked = imageClicked || buttonClicked || isInteractingWithZoomControl;
+    // Draw buttons
+    if (img.selected)
+    {
+        float buttonWidth = 60.0f;
+        float buttonHeight = 20.0f;
+        float buttonSpacing = 5.0f;
+        float buttonsStartX = topLeft.x;
+        float buttonsY = topLeft.y - buttonHeight - 5.0f;
+
+        // Mirror button
+        ImU32 mirrorButtonColor = img.mirrored ? IM_COL32(180, 190, 254, 255) : IM_COL32(70, 70, 70, 255);
+        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, img.mirrored ? "Reset Mirror" : "Mirror", mirrorButtonColor))
+        {
+            img.mirrored = !img.mirrored;
+            imageClicked = true;
+        }
+        buttonsStartX += buttonWidth + buttonSpacing;
+
+        // Eraser button
+        ImU32 eraserButtonColor = img.eraserMode ? IM_COL32(180, 190, 254, 255) : IM_COL32(70, 70, 70, 255);
+        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Eraser", eraserButtonColor))
+        {
+            img.eraserMode = !img.eraserMode;
+            imageClicked = true;
+        }
+        buttonsStartX += buttonWidth + buttonSpacing;
+
+        // Copy button
+        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Copy"))
+        {
+            Image copy = CreateImageCopy(img);
+            images.push_back(copy);
+            imageClicked = true;
+        }
+        buttonsStartX += buttonWidth + buttonSpacing;
+
+        // Delete button
+        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Delete"))
+        {
+            img.open = false;
+            imageClicked = true;
+        }
+        buttonsStartX += buttonWidth + buttonSpacing;
+
+        // Move to Back button
+        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "To Back"))
+        {
+            int lowestOrder = std::numeric_limits<int>::max();
+            for (const auto& otherImg : images)
+            {
+                if (otherImg.uploadOrder < lowestOrder)
+                {
+                    lowestOrder = otherImg.uploadOrder;
+                }
+            }
+            img.uploadOrder = lowestOrder - 1;
+            imageClicked = true;
+        }
+    }
 }
 
 
