@@ -272,10 +272,12 @@ void DisplayImage(Image& img, bool& imageClicked)
         uv_min, ImVec2(uv_max.x, uv_min.y), uv_max, ImVec2(uv_min.x, uv_max.y)
     );
 
-    // Custom hit-testing logic
+    // Custom hit-testing and interaction logic
     ImVec2 mousePos = ImGui::GetMousePos();
     bool isHovered = mousePos.x >= topLeft.x && mousePos.x <= bottomRight.x &&
                      mousePos.y >= topLeft.y && mousePos.y <= bottomRight.y;
+
+    bool isInteractingWithZoomControl = false;
 
     // Draw zoom control boxes and handle zooming only if the image is selected
     if (img.selected)
@@ -286,10 +288,10 @@ void DisplayImage(Image& img, bool& imageClicked)
         ImU32 boxHoverColor = IM_COL32(255, 255, 255, 255);
 
         ImVec2 zoomCorners[4] = {
-            ImVec2(topLeft.x - boxSize - boxOffset, topLeft.y - boxSize - boxOffset),      // A
-            ImVec2(bottomRight.x + boxOffset, topLeft.y - boxSize - boxOffset),            // B
-            ImVec2(bottomRight.x + boxOffset, bottomRight.y + boxOffset),                  // C
-            ImVec2(topLeft.x - boxSize - boxOffset, bottomRight.y + boxOffset)             // D
+            ImVec2(topLeft.x - boxSize - boxOffset, topLeft.y - boxSize - boxOffset),
+            ImVec2(bottomRight.x + boxOffset, topLeft.y - boxSize - boxOffset),
+            ImVec2(bottomRight.x + boxOffset, bottomRight.y + boxOffset),
+            ImVec2(topLeft.x - boxSize - boxOffset, bottomRight.y + boxOffset)
         };
 
         for (int i = 0; i < 4; ++i)
@@ -302,12 +304,16 @@ void DisplayImage(Image& img, bool& imageClicked)
 
             draw_list->AddRectFilled(boxMin, boxMax, color);
 
-            if (isHovering && ImGui::IsMouseClicked(0))
+            if (isHovering)
             {
-                img.activeZoomCorner = i;
-                img.zoomStartPos = ImGui::GetMousePos();
-                img.zoomStartValue = img.zoom;
-                imageClicked = true;
+                isInteractingWithZoomControl = true;
+                if (ImGui::IsMouseClicked(0))
+                {
+                    img.activeZoomCorner = i;
+                    img.zoomStartPos = ImGui::GetMousePos();
+                    img.zoomStartValue = img.zoom;
+                    imageClicked = true;
+                }
             }
         }
 
@@ -318,8 +324,7 @@ void DisplayImage(Image& img, bool& imageClicked)
                                       ImGui::GetMousePos().y - img.zoomStartPos.y);
             
             float dragDistance = sqrtf(dragDelta.x * dragDelta.x + dragDelta.y * dragDelta.y);
-            float zoomSensitivity = 0.005f;
-            float zoomFactor = 1.0f + dragDistance * zoomSensitivity;
+            float zoomFactor = 1.0f + dragDistance * 0.01f;
 
             bool shouldZoomOut = false;
             switch (img.activeZoomCorner) {
@@ -332,7 +337,7 @@ void DisplayImage(Image& img, bool& imageClicked)
             if (shouldZoomOut) zoomFactor = 1.0f / zoomFactor;
 
             float newZoom = img.zoomStartValue * zoomFactor;
-            newZoom = std::max(0.1f, std::min(newZoom, 5.0f));  // Clamp zoom between 0.1 and 5.0
+            newZoom = std::max(0.1f, std::min(newZoom, 5.0f));
 
             ImVec2 zoomCenter = zoomCorners[img.activeZoomCorner];
             ImVec2 centerOffset = ImVec2(zoomCenter.x - img.position.x, zoomCenter.y - img.position.y);
@@ -399,6 +404,16 @@ void DisplayImage(Image& img, bool& imageClicked)
             img.uploadOrder = lowestOrder - 1;
             imageClicked = true;
         }
+        buttonsStartX += buttonWidth + buttonSpacing;
+
+        // Rotate button
+        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Rotate"))
+        {
+            img.rotation += 45.0f;
+            if (img.rotation >= 360.0f)
+                img.rotation -= 360.0f;
+            imageClicked = true;
+        }
 
         // Draw selection box around the selected image
         draw_list->AddRect(
@@ -411,7 +426,8 @@ void DisplayImage(Image& img, bool& imageClicked)
     // Handle eraser mode
     if (img.selected && img.eraserMode && isHovered && ImGui::IsMouseDown(0))
     {
-        EraseImagePart(img, mousePos);
+        ImVec2 erasePos = ImVec2(mousePos.x - img.position.x, mousePos.y - img.position.y);
+        EraseImagePart(img, erasePos);
         imageClicked = true;
     }
 
@@ -420,6 +436,9 @@ void DisplayImage(Image& img, bool& imageClicked)
     {
         img.activeZoomCorner = -1;
     }
+
+    // Reset hover state
+    img.isHoveringZoomControl = isInteractingWithZoomControl;
 }
 
 
