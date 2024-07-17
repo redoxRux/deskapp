@@ -452,7 +452,15 @@ void DisplayImage(Image& img, bool& imageClicked)
     // Handle eraser mode
     if (img.selected && img.eraserMode && isHovered && ImGui::IsMouseDown(0))
     {
-        ImVec2 erasePos = ImVec2(mousePos.x - img.position.x, mousePos.y - img.position.y);
+        ImVec2 mousePos = ImGui::GetMousePos();
+        
+        // Calculate the center of the image
+        ImVec2 center = ImVec2(img.position.x + img.width * img.zoom * 0.5f, 
+                               img.position.y + img.height * img.zoom * 0.5f);
+
+        // Use the mouse position directly, as EraseImagePart will handle the transformations
+        ImVec2 erasePos = mousePos;
+
         EraseImagePart(img, erasePos);
         imageClicked = true;
     }
@@ -684,15 +692,9 @@ void ShowImageViewer(bool* p_open)
         ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
         if (draggedImage)
         {
-            if (draggedImage->eraserMode)
+            // Move only the dragged image if not in eraser mode
+            if (!draggedImage->eraserMode)
             {
-                // If in eraser mode, erase at the current mouse position without moving the image
-                ImVec2 erasePos = ImVec2(mousePos.x - draggedImage->position.x, mousePos.y - draggedImage->position.y);
-                EraseImagePart(*draggedImage, erasePos);
-            }
-            else
-            {
-                // Move only the dragged image if not in eraser mode
                 draggedImage->position.x += dragDelta.x;
                 draggedImage->position.y += dragDelta.y;
                 draggedImage->targetPosition = draggedImage->position;
