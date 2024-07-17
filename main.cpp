@@ -638,10 +638,19 @@ void ShowImageViewer(bool* p_open)
         ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
         if (draggedImage)
         {
-            // Move only the dragged image
-            draggedImage->position.x += dragDelta.x;
-            draggedImage->position.y += dragDelta.y;
-            draggedImage->targetPosition = draggedImage->position;
+            if (draggedImage->eraserMode)
+            {
+                // If in eraser mode, erase at the current mouse position without moving the image
+                ImVec2 erasePos = ImVec2(mousePos.x - draggedImage->position.x, mousePos.y - draggedImage->position.y);
+                EraseImagePart(*draggedImage, erasePos);
+            }
+            else
+            {
+                // Move only the dragged image if not in eraser mode
+                draggedImage->position.x += dragDelta.x;
+                draggedImage->position.y += dragDelta.y;
+                draggedImage->targetPosition = draggedImage->position;
+            }
         }
         else if (isGrabbingGrid)
         {
