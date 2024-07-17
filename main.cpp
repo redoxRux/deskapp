@@ -279,6 +279,10 @@ void DisplayImage(Image& img, bool& imageClicked)
 
     bool isInteractingWithZoomControl = false;
 
+    static bool isRotating = false;
+    static ImVec2 rotationCenter;
+    static float initialAngle;
+
     // Draw zoom control boxes and handle zooming only if the image is selected
     if (img.selected)
     {
@@ -407,12 +411,34 @@ void DisplayImage(Image& img, bool& imageClicked)
         buttonsStartX += buttonWidth + buttonSpacing;
 
         // Rotate button
-        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Rotate"))
+        ImU32 rotateButtonColor = isRotating ? IM_COL32(180, 190, 254, 255) : IM_COL32(70, 70, 70, 255);
+        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Rotate", rotateButtonColor))
         {
-            img.rotation += 45.0f;
-            if (img.rotation >= 360.0f)
-                img.rotation -= 360.0f;
+            if (!isRotating)
+            {
+                isRotating = true;
+                rotationCenter = center;
+                initialAngle = atan2f(ImGui::GetMousePos().y - rotationCenter.y, ImGui::GetMousePos().x - rotationCenter.x);
+            }
+            else
+            {
+                isRotating = false;
+            }
             imageClicked = true;
+        }
+
+        // Handle rotation
+        if (isRotating && ImGui::IsMouseDown(0))
+        {
+            ImVec2 mousePos = ImGui::GetMousePos();
+            float currentAngle = atan2f(mousePos.y - rotationCenter.y, mousePos.x - rotationCenter.x);
+            float angleDiff = currentAngle - initialAngle;
+            img.rotation += angleDiff * (180.0f / 3.14159f);
+            initialAngle = currentAngle;
+
+            // Normalize rotation to 0-360 degrees
+            while (img.rotation < 0.0f) img.rotation += 360.0f;
+            while (img.rotation >= 360.0f) img.rotation -= 360.0f;
         }
 
         // Draw selection box around the selected image
@@ -435,6 +461,7 @@ void DisplayImage(Image& img, bool& imageClicked)
     if (ImGui::IsMouseReleased(0))
     {
         img.activeZoomCorner = -1;
+        isRotating = false;
     }
 
     // Reset hover state
