@@ -431,7 +431,6 @@ void ShowImageViewer(bool* p_open)
     static ImVec2 dragStartPos;
     static bool isGrabbingGrid = false;
     static ImVec2 gridGrabStartPos;
-    static ImVec2 lastGridOffset = gridOffset;
 
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
@@ -590,22 +589,11 @@ void ShowImageViewer(bool* p_open)
     Image* hoveredImage = nullptr;
     bool imageClicked = false;
 
-    // Calculate grid movement
-    ImVec2 gridMovement = ImVec2(gridOffset.x - lastGridOffset.x, gridOffset.y - lastGridOffset.y);
-
     // Display all images and find the topmost hovered image
     for (auto& img : images)
     {
         if (img.open)
         {
-            // Move image with grid if not being dragged individually
-            if (&img != draggedImage)
-            {
-                img.position.x += gridMovement.x;
-                img.position.y += gridMovement.y;
-                img.targetPosition = img.position;
-            }
-
             DisplayImage(img, imageClicked);
 
             if (IsPointInImage(img, relativeMousePos))
@@ -647,20 +635,33 @@ void ShowImageViewer(bool* p_open)
     // Handle dragging
     if (ImGui::IsMouseDragging(ImGuiMouseButton_Left))
     {
+        ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
         if (draggedImage)
         {
-            ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
-            draggedImage->targetPosition.x += dragDelta.x;
-            draggedImage->targetPosition.y += dragDelta.y;
-            ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
+            // Move only the dragged image
+            draggedImage->position.x += dragDelta.x;
+            draggedImage->position.y += dragDelta.y;
+            draggedImage->targetPosition = draggedImage->position;
         }
         else if (isGrabbingGrid)
         {
-            ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
+            // Move the grid and all images
+            ImVec2 oldGridOffset = gridOffset;
             gridOffset.x += dragDelta.x;
             gridOffset.y += dragDelta.y;
-            ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
+            
+            ImVec2 gridMovement = ImVec2(gridOffset.x - oldGridOffset.x, gridOffset.y - oldGridOffset.y);
+            for (auto& img : images)
+            {
+                if (img.open)
+                {
+                    img.position.x += gridMovement.x;
+                    img.position.y += gridMovement.y;
+                    img.targetPosition = img.position;
+                }
+            }
         }
+        ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
     }
 
     // Reset dragged image and grid grabbing when mouse is released
@@ -700,9 +701,6 @@ void ShowImageViewer(bool* p_open)
             img.zoom *= zoomFactor;
         }
     }
-
-    // Store the current grid offset for the next frame
-    lastGridOffset = gridOffset;
 
     images.erase(std::remove_if(images.begin(), images.end(),
         [&](const Image& img) { 
