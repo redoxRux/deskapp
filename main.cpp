@@ -431,6 +431,7 @@ void ShowImageViewer(bool* p_open)
     static ImVec2 dragStartPos;
     static bool isGrabbingGrid = false;
     static ImVec2 gridGrabStartPos;
+    static ImVec2 lastGridOffset = gridOffset;
 
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
@@ -589,11 +590,22 @@ void ShowImageViewer(bool* p_open)
     Image* hoveredImage = nullptr;
     bool imageClicked = false;
 
+    // Calculate grid movement
+    ImVec2 gridMovement = ImVec2(gridOffset.x - lastGridOffset.x, gridOffset.y - lastGridOffset.y);
+
     // Display all images and find the topmost hovered image
     for (auto& img : images)
     {
         if (img.open)
         {
+            // Move image with grid if not being dragged individually
+            if (&img != draggedImage)
+            {
+                img.position.x += gridMovement.x;
+                img.position.y += gridMovement.y;
+                img.targetPosition = img.position;
+            }
+
             DisplayImage(img, imageClicked);
 
             if (IsPointInImage(img, relativeMousePos))
@@ -663,17 +675,34 @@ void ShowImageViewer(bool* p_open)
     if (mouseWheel != 0.0f)
     {
         float zoomFactor = 1.0f + mouseWheel * 0.1f;
+        float oldGridScale = gridScale;
         gridScale *= zoomFactor;
         gridScale = std::max(0.1f, gridScale); // Prevent scale from going negative or zero
 
         // Adjust gridOffset to zoom towards mouse position
         ImVec2 mouseGridPos = ImVec2(
-            (mousePos.x - windowPos.x - gridOffset.x) / gridScale,
-            (mousePos.y - windowPos.y - gridOffset.y) / gridScale
+            (mousePos.x - windowPos.x - gridOffset.x) / oldGridScale,
+            (mousePos.y - windowPos.y - gridOffset.y) / oldGridScale
         );
-        gridOffset.x = mousePos.x - windowPos.x - mouseGridPos.x * gridScale * zoomFactor;
-        gridOffset.y = mousePos.y - windowPos.y - mouseGridPos.y * gridScale * zoomFactor;
+        gridOffset.x = mousePos.x - windowPos.x - mouseGridPos.x * gridScale;
+        gridOffset.y = mousePos.y - windowPos.y - mouseGridPos.y * gridScale;
+
+        // Adjust image positions and sizes based on zoom
+        for (auto& img : images)
+        {
+            ImVec2 imgGridPos = ImVec2(
+                (img.position.x - gridOffset.x) / oldGridScale,
+                (img.position.y - gridOffset.y) / oldGridScale
+            );
+            img.position.x = gridOffset.x + imgGridPos.x * gridScale;
+            img.position.y = gridOffset.y + imgGridPos.y * gridScale;
+            img.targetPosition = img.position;
+            img.zoom *= zoomFactor;
+        }
     }
+
+    // Store the current grid offset for the next frame
+    lastGridOffset = gridOffset;
 
     images.erase(std::remove_if(images.begin(), images.end(),
         [&](const Image& img) { 
