@@ -377,6 +377,19 @@ void DisplayImage(Image& img, bool& imageClicked)
         }
         buttonsStartX += buttonWidth + buttonSpacing;
 
+        // Eraser size slider (only visible when eraser mode is active)
+        if (img.eraserMode)
+        {
+            ImGui::SetCursorPos(ImVec2(buttonsStartX, buttonsY));
+            ImGui::PushItemWidth(100);
+            if (ImGui::SliderInt("##EraserSize", &img.eraserSize, 1, 50, "Size: %d"))
+            {
+                imageClicked = true;
+            }
+            ImGui::PopItemWidth();
+            buttonsStartX += 100 + buttonSpacing;
+        }
+
         // Copy button
         if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Copy"))
         {
@@ -452,17 +465,15 @@ void DisplayImage(Image& img, bool& imageClicked)
     // Handle eraser mode
     if (img.selected && img.eraserMode && isHovered && ImGui::IsMouseDown(0))
     {
-        ImVec2 mousePos = ImGui::GetMousePos();
-        
-        // Calculate the center of the image
-        ImVec2 center = ImVec2(img.position.x + img.width * img.zoom * 0.5f, 
-                               img.position.y + img.height * img.zoom * 0.5f);
-
-        // Use the mouse position directly, as EraseImagePart will handle the transformations
-        ImVec2 erasePos = mousePos;
-
-        EraseImagePart(img, erasePos);
+        EraseImagePart(img, mousePos);
         imageClicked = true;
+    }
+
+    // Draw eraser cursor
+    if (img.selected && img.eraserMode && isHovered)
+    {
+        float radius = img.eraserSize * img.zoom / 2.0f;
+        draw_list->AddCircle(mousePos, radius, IM_COL32(255, 255, 255, 200), 0, 2.0f);
     }
 
     // Reset active zoom corner if mouse is released
