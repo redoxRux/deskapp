@@ -308,7 +308,7 @@ void DisplayImage(Image& img, bool& imageClicked)
 
             draw_list->AddRectFilled(boxMin, boxMax, color);
 
-            if (isHovering)
+            if (isHovering && !img.eraserMode)
             {
                 isInteractingWithZoomControl = true;
                 if (ImGui::IsMouseClicked(0))
@@ -322,7 +322,7 @@ void DisplayImage(Image& img, bool& imageClicked)
         }
 
         // Handle zooming
-        if (img.activeZoomCorner != -1 && ImGui::IsMouseDown(0))
+        if (img.activeZoomCorner != -1 && ImGui::IsMouseDown(0) && !img.eraserMode)
         {
             ImVec2 dragDelta = ImVec2(ImGui::GetMousePos().x - img.zoomStartPos.x, 
                                       ImGui::GetMousePos().y - img.zoomStartPos.y);
@@ -352,63 +352,72 @@ void DisplayImage(Image& img, bool& imageClicked)
             img.zoom = newZoom;
         }
 
-        // Draw buttons
         float buttonWidth = 60.0f;
         float buttonHeight = 20.0f;
         float buttonSpacing = 5.0f;
         float buttonsStartX = topLeft.x;
         float buttonsY = topLeft.y - buttonHeight - 5.0f;
 
+        // Helper function to draw a button and handle clicks
+        auto DrawButtonConditional = [&](const char* label, ImU32 color, bool enabled) {
+            ImU32 buttonColor = enabled ? color : IM_COL32(100, 100, 100, 255); // Grayed out if disabled
+            if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, label, buttonColor) && enabled)
+            {
+                return true;
+            }
+            buttonsStartX += buttonWidth + buttonSpacing;
+            return false;
+        };
+
         // Mirror button
-        ImU32 mirrorButtonColor = img.mirrored ? IM_COL32(180, 190, 254, 255) : IM_COL32(70, 70, 70, 255);
-        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, img.mirrored ? "Reset Mirror" : "Mirror", mirrorButtonColor))
+        if (DrawButtonConditional(img.mirrored ? "Reset Mirror" : "Mirror", 
+                                  img.mirrored ? IM_COL32(180, 190, 254, 255) : IM_COL32(70, 70, 70, 255), 
+                                  !img.eraserMode))
         {
             img.mirrored = !img.mirrored;
             imageClicked = true;
         }
-        buttonsStartX += buttonWidth + buttonSpacing;
 
         // Eraser button
-        ImU32 eraserButtonColor = img.eraserMode ? IM_COL32(180, 190, 254, 255) : IM_COL32(70, 70, 70, 255);
-        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Eraser", eraserButtonColor))
+        if (DrawButtonConditional("Eraser", 
+                                  img.eraserMode ? IM_COL32(180, 190, 254, 255) : IM_COL32(70, 70, 70, 255), 
+                                  true)) // Eraser button is always enabled
         {
             img.eraserMode = !img.eraserMode;
             imageClicked = true;
         }
-        buttonsStartX += buttonWidth + buttonSpacing;
 
         // Eraser size slider (only visible when eraser mode is active)
         if (img.eraserMode)
         {
-            ImGui::SetCursorPos(ImVec2(buttonsStartX, buttonsY));
-            ImGui::PushItemWidth(100);
+            float sliderWidth = 100.0f;
+            ImGui::SetCursorScreenPos(ImVec2(buttonsStartX, buttonsY));
+            ImGui::PushItemWidth(sliderWidth);
             if (ImGui::SliderInt("##EraserSize", &img.eraserSize, 1, 50, "Size: %d"))
             {
                 imageClicked = true;
             }
             ImGui::PopItemWidth();
-            buttonsStartX += 100 + buttonSpacing;
+            buttonsStartX += sliderWidth + buttonSpacing;
         }
 
         // Copy button
-        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Copy"))
+        if (DrawButtonConditional("Copy", IM_COL32(70, 70, 70, 255), !img.eraserMode))
         {
             Image copy = CreateImageCopy(img);
             images.push_back(copy);
             imageClicked = true;
         }
-        buttonsStartX += buttonWidth + buttonSpacing;
 
         // Delete button
-        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Delete"))
+        if (DrawButtonConditional("Delete", IM_COL32(70, 70, 70, 255), !img.eraserMode))
         {
             img.open = false;
             imageClicked = true;
         }
-        buttonsStartX += buttonWidth + buttonSpacing;
 
         // Move to Back button
-        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "To Back"))
+        if (DrawButtonConditional("To Back", IM_COL32(70, 70, 70, 255), !img.eraserMode))
         {
             int lowestOrder = std::numeric_limits<int>::max();
             for (const auto& otherImg : images)
@@ -421,11 +430,11 @@ void DisplayImage(Image& img, bool& imageClicked)
             img.uploadOrder = lowestOrder - 1;
             imageClicked = true;
         }
-        buttonsStartX += buttonWidth + buttonSpacing;
 
         // Rotate button
-        ImU32 rotateButtonColor = isRotating ? IM_COL32(180, 190, 254, 255) : IM_COL32(70, 70, 70, 255);
-        if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, "Rotate", rotateButtonColor))
+        if (DrawButtonConditional("Rotate", 
+                                  isRotating ? IM_COL32(180, 190, 254, 255) : IM_COL32(70, 70, 70, 255), 
+                                  !img.eraserMode))
         {
             if (!isRotating)
             {
@@ -441,7 +450,7 @@ void DisplayImage(Image& img, bool& imageClicked)
         }
 
         // Handle rotation
-        if (isRotating && ImGui::IsMouseDown(0))
+        if (isRotating && ImGui::IsMouseDown(0) && !img.eraserMode)
         {
             ImVec2 mousePos = ImGui::GetMousePos();
             float currentAngle = atan2f(mousePos.y - rotationCenter.y, mousePos.x - rotationCenter.x);
