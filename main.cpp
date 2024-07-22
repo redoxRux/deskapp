@@ -167,7 +167,6 @@ void EraseImagePart(Image& img, const ImVec2& point)
     {
         for (int x = -img.eraserSize; x <= img.eraserSize; ++x)
         {
-            // Check if the point is within the circular eraser area
             if (x*x + y*y <= img.eraserSize*img.eraserSize)
             {
                 int pixelX = centerX + x;
@@ -359,23 +358,21 @@ void DisplayImage(Image& img, bool& imageClicked)
         float buttonsY = topLeft.y - buttonHeight - 5.0f;
 
         // Helper function to draw a button and handle clicks
-        auto DrawButtonConditional = [&](const char* label, ImU32 color, bool enabled) {
+        auto DrawButtonConditional = [&](const char* label, ImU32 color, bool enabled) -> bool {
             ImU32 buttonColor = enabled ? color : IM_COL32(100, 100, 100, 255); // Grayed out if disabled
-            if (DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, label, buttonColor) && enabled)
-            {
-                return true;
-            }
+            bool clicked = DrawButton(draw_list, buttonsStartX, buttonsY, buttonWidth, buttonHeight, label, buttonColor);
             buttonsStartX += buttonWidth + buttonSpacing;
-            return false;
+            return clicked && enabled;
         };
 
         // Mirror button
         if (DrawButtonConditional(img.mirrored ? "Reset Mirror" : "Mirror", 
                                   img.mirrored ? IM_COL32(180, 190, 254, 255) : IM_COL32(70, 70, 70, 255), 
-                                  !img.eraserMode))
+                                  true)) // Mirror button is always enabled
         {
             img.mirrored = !img.mirrored;
             imageClicked = true;
+            std::cout << "Mirror button clicked. Mirrored: " << img.mirrored << std::endl;
         }
 
         // Eraser button
@@ -385,6 +382,7 @@ void DisplayImage(Image& img, bool& imageClicked)
         {
             img.eraserMode = !img.eraserMode;
             imageClicked = true;
+            std::cout << "Eraser button clicked. Eraser mode: " << img.eraserMode << std::endl;
         }
 
         // Eraser size slider (only visible when eraser mode is active)
@@ -682,12 +680,28 @@ void ShowImageViewer(bool* p_open)
     {
         if (hoveredImage)
         {
-            selectedImage = hoveredImage;
-            draggedImage = hoveredImage;
-            dragStartPos = ImGui::GetMousePos();
-            for (auto& img : images)
+            // If we're clicking on a new image, reset the previous selected image
+            if (selectedImage && selectedImage != hoveredImage)
             {
-                img.selected = (&img == selectedImage);
+                selectedImage->selected = false;
+                selectedImage->eraserMode = false;  // Turn off eraser mode when deselecting
+            }
+
+            selectedImage = hoveredImage;
+            selectedImage->selected = true;
+
+            std::cout << "Selected new image. Mirrored: " << selectedImage->mirrored 
+                      << ", Eraser mode: " << selectedImage->eraserMode << std::endl;
+
+            // Only start dragging if not in eraser mode
+            if (!selectedImage->eraserMode)
+            {
+                draggedImage = selectedImage;
+                dragStartPos = ImGui::GetMousePos();
+            }
+            else
+            {
+                draggedImage = nullptr;
             }
         }
         else if (!imageClicked)
@@ -697,12 +711,13 @@ void ShowImageViewer(bool* p_open)
             gridGrabStartPos = ImGui::GetMousePos();
             
             // Deselect all images when clicking on empty space
+            if (selectedImage)
+            {
+                selectedImage->selected = false;
+                selectedImage->eraserMode = false;  // Turn off eraser mode when deselecting
+            }
             selectedImage = nullptr;
             draggedImage = nullptr;
-            for (auto& img : images)
-            {
-                img.selected = false;
-            }
         }
     }
 
@@ -710,15 +725,12 @@ void ShowImageViewer(bool* p_open)
     if (ImGui::IsMouseDragging(ImGuiMouseButton_Left))
     {
         ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
-        if (draggedImage)
+        if (draggedImage && !draggedImage->eraserMode)
         {
             // Move only the dragged image if not in eraser mode
-            if (!draggedImage->eraserMode)
-            {
-                draggedImage->position.x += dragDelta.x;
-                draggedImage->position.y += dragDelta.y;
-                draggedImage->targetPosition = draggedImage->position;
-            }
+            draggedImage->position.x += dragDelta.x;
+            draggedImage->position.y += dragDelta.y;
+            draggedImage->targetPosition = draggedImage->position;
         }
         else if (isGrabbingGrid)
         {
