@@ -515,6 +515,8 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     ImGuiIO& io = ImGui::GetIO();
 
+    bool clickedOnAnyText = false;
+
     for (auto& text : texts)
     {
         // Calculate the screen position of the text
@@ -545,16 +547,13 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
         ImGui::PopFont();
 
         // Check if the text is clicked
-        bool isClicked = ImGui::IsMouseHoveringRect(boxMin, boxMax) && ImGui::IsMouseClicked(ImGuiMouseButton_Left);
-
-        if (isClicked)
+        bool isHovered = ImGui::IsMouseHoveringRect(boxMin, boxMax);
+        if (isHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
         {
-            selectedText = (selectedText == &text) ? nullptr : &text;
-            if (selectedText)
-            {
-                draggedText = &text;
-                dragStartPos = ImGui::GetMousePos();
-            }
+            selectedText = &text;
+            draggedText = &text;
+            dragStartPos = ImGui::GetMousePos();
+            clickedOnAnyText = true;
             textClicked = true;
         }
 
@@ -582,17 +581,18 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                 ImVec2 cornerMin = zoomCorners[i];
                 ImVec2 cornerMax = ImVec2(cornerMin.x + zoomBoxSize, cornerMin.y + zoomBoxSize);
 
-                bool isHovering = ImGui::IsMouseHoveringRect(cornerMin, cornerMax);
-                ImU32 color = isHovering ? zoomBoxHoverColor : zoomBoxColor;
+                bool isZoomHovering = ImGui::IsMouseHoveringRect(cornerMin, cornerMax);
+                ImU32 color = isZoomHovering ? zoomBoxHoverColor : zoomBoxColor;
 
                 draw_list->AddRectFilled(cornerMin, cornerMax, color);
 
-                if (isHovering && ImGui::IsMouseClicked(0))
+                if (isZoomHovering && ImGui::IsMouseClicked(0))
                 {
                     activeZoomCorner = i;
                     zoomStartPos = ImGui::GetMousePos();
                     zoomStartValue = text.size;
                     textClicked = true;
+                    clickedOnAnyText = true;
                 }
             }
 
@@ -620,6 +620,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                 text.size = text.size * 0.9f + targetSize * 0.1f;
                 text.size = std::max(5.0f, std::min(text.size, 100.0f)); // Limit zoom range
                 textClicked = true;
+                clickedOnAnyText = true;
             }
         }
 
@@ -631,7 +632,15 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
             text.position.y += dragDelta.y / gridScale;
             ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
             textClicked = true;
+            clickedOnAnyText = true;
         }
+    }
+
+    // Deselect if clicked outside any text
+    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !clickedOnAnyText)
+    {
+        selectedText = nullptr;
+        draggedText = nullptr;
     }
 
     // Reset dragged text and active zoom corner when mouse is released
