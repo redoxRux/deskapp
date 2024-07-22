@@ -678,18 +678,16 @@ void ShowImageViewer(bool* p_open)
     {
         if (hoveredImage)
         {
-            // If we're clicking on a new image, reset the previous selected image
+            // Deselect the previously selected image
             if (selectedImage && selectedImage != hoveredImage)
             {
                 selectedImage->selected = false;
                 selectedImage->eraserMode = false;  // Turn off eraser mode when deselecting
             }
 
+            // Select the new image
             selectedImage = hoveredImage;
             selectedImage->selected = true;
-
-            std::cout << "Selected new image. Mirrored: " << selectedImage->mirrored 
-                      << ", Eraser mode: " << selectedImage->eraserMode << std::endl;
 
             // Only start dragging if not in eraser mode
             if (!selectedImage->eraserMode)
@@ -701,21 +699,41 @@ void ShowImageViewer(bool* p_open)
             {
                 draggedImage = nullptr;
             }
+
+            // Ensure all other images are deselected
+            for (auto& img : images)
+            {
+                if (&img != selectedImage)
+                {
+                    img.selected = false;
+                    img.eraserMode = false;
+                }
+            }
+
+            std::cout << "Selected image. Mirrored: " << selectedImage->mirrored 
+                      << ", Eraser mode: " << selectedImage->eraserMode << std::endl;
         }
         else if (!imageClicked)
         {
-            // Start grabbing the grid
-            isGrabbingGrid = true;
-            gridGrabStartPos = ImGui::GetMousePos();
-            
-            // Deselect all images when clicking on empty space
+            // Clicking on empty space
             if (selectedImage)
             {
                 selectedImage->selected = false;
-                selectedImage->eraserMode = false;  // Turn off eraser mode when deselecting
+                selectedImage->eraserMode = false;
             }
             selectedImage = nullptr;
             draggedImage = nullptr;
+
+            // Ensure all images are deselected
+            for (auto& img : images)
+            {
+                img.selected = false;
+                img.eraserMode = false;
+            }
+
+            // Start grabbing the grid
+            isGrabbingGrid = true;
+            gridGrabStartPos = ImGui::GetMousePos();
         }
     }
 
