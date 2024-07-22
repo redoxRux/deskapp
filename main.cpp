@@ -365,10 +365,8 @@ void DisplayImage(Image& img, bool& imageClicked)
             return clicked && enabled;
         };
 
-        // Mirror button
-        if (DrawButtonConditional(img.mirrored ? "Reset Mirror" : "Mirror", 
-                                  img.mirrored ? IM_COL32(180, 190, 254, 255) : IM_COL32(70, 70, 70, 255), 
-                                  true)) // Mirror button is always enabled
+        // Mirror button - always displays as "Mirror" with a constant color
+        if (DrawButtonConditional("Mirror", IM_COL32(70, 70, 70, 255), true)) // Mirror button is always enabled
         {
             img.mirrored = !img.mirrored;
             imageClicked = true;
