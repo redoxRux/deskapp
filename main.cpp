@@ -662,12 +662,26 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
     {
         static char textBuffer[256] = "";
         static ImVec4 textColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-        static float defaultTextSize = 20.0f;
+        static int selectedFontSize = 1; // 0: Small, 1: Medium, 2: Large
+        static const char* fontSizes[] = { "Small Font", "Medium Font", "Large Font" };
+        static const float fontSizeValues[] = { 14.0f, 20.0f, 28.0f };
 
-        ImGui::InputText("Text", textBuffer, IM_ARRAYSIZE(textBuffer));
-        
-        // Simplified color picker (only white box)
-        ImGui::ColorEdit3("Color", (float*)&textColor, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+        // Font size dropdown and color picker on the same line
+        ImGui::PushItemWidth(150);
+        ImGui::Combo("##FontSize", &selectedFontSize, fontSizes, IM_ARRAYSIZE(fontSizes));
+        ImGui::SameLine();
+        ImGui::ColorEdit3("##Color", (float*)&textColor, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+        ImGui::PopItemWidth();
+
+        // Editable preview text
+        ImGui::PushFont(io.Fonts->Fonts[0]);
+        ImGui::SetWindowFontScale(fontSizeValues[selectedFontSize] / 20.0f);
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, textColor);
+        ImGui::InputTextMultiline("##Text", textBuffer, IM_ARRAYSIZE(textBuffer), ImVec2(300, 100), ImGuiInputTextFlags_AllowTabInput);
+        ImGui::PopStyleColor(2);
+        ImGui::SetWindowFontScale(1.0f);
+        ImGui::PopFont();
 
         if (ImGui::Button("Add"))
         {
@@ -682,7 +696,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                     std::string(textBuffer),
                     worldPos,
                     textColor,
-                    defaultTextSize,
+                    fontSizeValues[selectedFontSize],
                     false
                 });
                 ImGui::CloseCurrentPopup();
