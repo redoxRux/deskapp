@@ -1,4 +1,5 @@
 #include <iostream>
+#include <filesystem>
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -10,6 +11,11 @@
 #include "backends/imgui_impl_opengl3.h"
 #include "stb_image.h"
 #include "tinyfiledialogs.h"
+
+// Add these declarations at the top of your file
+std::vector<ImFont*> loadedFonts;
+std::vector<std::string> fontNames;
+
 
 struct Image {
     GLuint texture;
@@ -50,8 +56,9 @@ struct Text {
     ImVec4 color;
     float size;
     bool selected;
+    int fontIndex;  // Add this line to store the font index
 };
-
+bool isAddTextPopupOpen = false;
 std::vector<Text> texts;
 
 std::vector<ImageState> undoStates;
@@ -59,6 +66,48 @@ std::vector<ImageState> redoStates;
 
 ImVec2 gridOffset(0.0f, 0.0f);
 float gridScale = 1.0f;
+
+const char* FontGetter(void* vec, int idx)
+{
+    auto& vector = *static_cast<std::vector<std::string>*>(vec);
+    if (idx >= 0 && idx < static_cast<int>(vector.size()))
+        return vector[idx].c_str();
+    return "Unknown";
+}
+
+
+void LoadFonts(float fontSize = 24.0f) {
+    const char* fontsDir = "fonts";
+    ImGuiIO& io = ImGui::GetIO();
+
+    // Add default font
+    ImFont* defaultFont = io.Fonts->AddFontDefault();
+    loadedFonts.push_back(defaultFont);
+    fontNames.push_back("Default");
+
+    for (const auto& entry : std::filesystem::directory_iterator(fontsDir)) {
+        if (entry.path().extension() == ".ttf") {
+            std::string fontPath = entry.path().string();
+            std::string fontName = entry.path().stem().string();
+            
+            ImFont* font = io.Fonts->AddFontFromFileTTF(fontPath.c_str(), fontSize);
+            if (font != nullptr) {
+                loadedFonts.push_back(font);
+                fontNames.push_back(fontName);
+                std::cout << "Loaded font: " << fontName << std::endl;
+            } else {
+                std::cerr << "Failed to load font: " << fontName << std::endl;
+            }
+        }
+    }
+
+    // Rebuild font atlas
+    io.Fonts->Build();
+
+    // Set default font
+    io.FontDefault = defaultFont;
+}
+
 
 // Add this function to draw the grid
 void DrawGrid(ImDrawList* draw_list, const ImVec2& windowPos, const ImVec2& windowSize)
@@ -519,7 +568,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
 
     bool clickedOnAnyText = false;
 
-    if (!colorPickerOpen)
+    if (!colorPickerOpen && !isAddTextPopupOpen)
     {
         for (auto& text : texts)
         {
@@ -528,8 +577,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                 text.position.y * gridScale + gridOffset.y
             );
 
-            ImFont* font = io.Fonts->Fonts[0];
-            ImGui::PushFont(font);
+            ImFont* font = (text.fontIndex == 0) ? io.FontDefault : loadedFonts[text.fontIndex];
             float scaledSize = text.size * gridScale;
 
             ImVec2 textSize = font->CalcTextSizeA(scaledSize, FLT_MAX, 0.0f, text.content.c_str());
@@ -540,8 +588,6 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
             ImVec2 boxMax = ImVec2(screenPos.x + textSize.x + padding, screenPos.y + textSize.y + padding);
 
             draw_list->AddText(font, scaledSize, screenPos, ImGui::ColorConvertFloat4ToU32(text.color), text.content.c_str());
-
-            ImGui::PopFont();
 
             bool isHovered = ImGui::IsMouseHoveringRect(boxMin, boxMax);
             if (isHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
@@ -644,22 +690,26 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
     if (ImGui::Button("Add Text"))
     {
         ImGui::OpenPopup("Add Text");
+        isAddTextPopupOpen = true;  // Set the flag when opening the popup
     }
 
     ImGui::SetNextWindowPos(ImVec2(buttonPos.x, buttonPos.y - 200), ImGuiCond_Always);
 
     if (ImGui::BeginPopup("Add Text"))
     {
+        isAddTextPopupOpen = true;  // Ensure the flag is set while the popup is open
+
         static char textBuffer[256] = "";
         static ImVec4 textColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
         static int selectedFontSize = 1;
         static const char* fontSizes[] = { "Small Font", "Medium Font", "Large Font" };
         static const float fontSizeValues[] = { 14.0f, 20.0f, 28.0f };
+        static int selectedFont = 0;
 
         ImGui::PushItemWidth(150);
-        ImGui::Combo("##FontSize", &selectedFontSize, fontSizes, IM_ARRAYSIZE(fontSizes));
-        ImGui::SameLine();
-        ImGui::ColorEdit3("##Color", (float*)&textColor, 
+        ImGui::Combo("Font", &selectedFont, FontGetter, static_cast<void*>(&fontNames), fontNames.size());
+        ImGui::Combo("Size", &selectedFontSize, fontSizes, IM_ARRAYSIZE(fontSizes));
+        ImGui::ColorEdit3("Color", (float*)&textColor, 
             ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | 
             ImGuiColorEditFlags_NoSidePreview | ImGuiColorEditFlags_NoPicker);
         if (ImGui::IsItemClicked())
@@ -681,13 +731,12 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
         }
         ImGui::PopItemWidth();
 
-        ImGui::PushFont(io.Fonts->Fonts[0]);
-        ImGui::SetWindowFontScale(fontSizeValues[selectedFontSize] / 20.0f);
+        ImFont* previewFont = (selectedFont == 0) ? io.FontDefault : loadedFonts[selectedFont];
+        ImGui::PushFont(previewFont);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_Text, textColor);
         ImGui::InputTextMultiline("##Text", textBuffer, IM_ARRAYSIZE(textBuffer), ImVec2(300, 100), ImGuiInputTextFlags_AllowTabInput);
         ImGui::PopStyleColor(2);
-        ImGui::SetWindowFontScale(1.0f);
         ImGui::PopFont();
 
         if (ImGui::Button("Add"))
@@ -704,16 +753,22 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                     worldPos,
                     textColor,
                     fontSizeValues[selectedFontSize],
-                    false
+                    false,
+                    selectedFont
                 });
                 ImGui::CloseCurrentPopup();
+                isAddTextPopupOpen = false;  // Reset the flag when closing the popup
                 textClicked = true;
             }
         }
         ImGui::EndPopup();
     }
+    else
+    {
+        isAddTextPopupOpen = false;  // Reset the flag if the popup is not open
+    }
 
-    if (selectedText && ImGui::IsKeyPressed(ImGuiKey_Delete) && !colorPickerOpen)
+    if (selectedText && ImGui::IsKeyPressed(ImGuiKey_Delete) && !colorPickerOpen && !isAddTextPopupOpen)
     {
         texts.erase(std::remove_if(texts.begin(), texts.end(),
             [&](const Text& t) { return &t == selectedText; }),
@@ -722,7 +777,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
         textClicked = true;
     }
 
-    if (colorPickerOpen)
+    if (colorPickerOpen || isAddTextPopupOpen)
     {
         ImGui::GetIO().WantCaptureMouse = true;
     }
@@ -912,154 +967,157 @@ void ShowImageViewer(bool* p_open)
     HandleTextInterface(ImGui::GetWindowSize(), textClicked);
 
     // Handle selection and start of dragging
-    if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+    if (!isAddTextPopupOpen)
     {
-        if (hoveredImage && !textClicked)
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
         {
-            // Deselect the previously selected image
-            if (selectedImage && selectedImage != hoveredImage)
+            if (hoveredImage && !textClicked)
             {
-                selectedImage->selected = false;
-                selectedImage->eraserMode = false;  // Turn off eraser mode when deselecting
-            }
+                // Deselect the previously selected image
+                if (selectedImage && selectedImage != hoveredImage)
+                {
+                    selectedImage->selected = false;
+                    selectedImage->eraserMode = false;  // Turn off eraser mode when deselecting
+                }
 
-            // Select the new image
-            selectedImage = hoveredImage;
-            selectedImage->selected = true;
+                // Select the new image
+                selectedImage = hoveredImage;
+                selectedImage->selected = true;
 
-            // Only start dragging if not in eraser mode
-            if (!selectedImage->eraserMode)
-            {
-                draggedImage = selectedImage;
-                dragStartPos = ImGui::GetMousePos();
+                // Only start dragging if not in eraser mode
+                if (!selectedImage->eraserMode)
+                {
+                    draggedImage = selectedImage;
+                    dragStartPos = ImGui::GetMousePos();
+                }
+                else
+                {
+                    draggedImage = nullptr;
+                }
+
+                // Ensure all other images are deselected
+                for (auto& img : images)
+                {
+                    if (&img != selectedImage)
+                    {
+                        img.selected = false;
+                        img.eraserMode = false;
+                    }
+                }
+
+                std::cout << "Selected image. Mirrored: " << selectedImage->mirrored 
+                          << ", Eraser mode: " << selectedImage->eraserMode << std::endl;
             }
-            else
+            else if (!imageClicked && !textClicked)
             {
+                // Clicking on empty space
+                if (selectedImage)
+                {
+                    selectedImage->selected = false;
+                    selectedImage->eraserMode = false;
+                }
+                selectedImage = nullptr;
                 draggedImage = nullptr;
-            }
 
-            // Ensure all other images are deselected
-            for (auto& img : images)
-            {
-                if (&img != selectedImage)
+                // Ensure all images are deselected
+                for (auto& img : images)
                 {
                     img.selected = false;
                     img.eraserMode = false;
                 }
+
+                // Start grabbing the grid
+                isGrabbingGrid = true;
+                gridGrabStartPos = ImGui::GetMousePos();
             }
-
-            std::cout << "Selected image. Mirrored: " << selectedImage->mirrored 
-                      << ", Eraser mode: " << selectedImage->eraserMode << std::endl;
         }
-        else if (!imageClicked && !textClicked)
+
+        // Handle dragging
+        if (ImGui::IsMouseDragging(ImGuiMouseButton_Left))
         {
-            // Clicking on empty space
-            if (selectedImage)
+            ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
+            if (draggedImage && !draggedImage->eraserMode)
             {
-                selectedImage->selected = false;
-                selectedImage->eraserMode = false;
+                // Move only the dragged image if not in eraser mode
+                draggedImage->position.x += dragDelta.x;
+                draggedImage->position.y += dragDelta.y;
+                draggedImage->targetPosition = draggedImage->position;
             }
-            selectedImage = nullptr;
-            draggedImage = nullptr;
-
-            // Ensure all images are deselected
-            for (auto& img : images)
+            else if (isGrabbingGrid)
             {
-                img.selected = false;
-                img.eraserMode = false;
-            }
-
-            // Start grabbing the grid
-            isGrabbingGrid = true;
-            gridGrabStartPos = ImGui::GetMousePos();
-        }
-    }
-
-    // Handle dragging
-    if (ImGui::IsMouseDragging(ImGuiMouseButton_Left))
-    {
-        ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
-        if (draggedImage && !draggedImage->eraserMode)
-        {
-            // Move only the dragged image if not in eraser mode
-            draggedImage->position.x += dragDelta.x;
-            draggedImage->position.y += dragDelta.y;
-            draggedImage->targetPosition = draggedImage->position;
-        }
-        else if (isGrabbingGrid)
-        {
-            // Move the grid and all images
-            ImVec2 oldGridOffset = gridOffset;
-            gridOffset.x += dragDelta.x;
-            gridOffset.y += dragDelta.y;
-            
-            ImVec2 gridMovement = ImVec2(gridOffset.x - oldGridOffset.x, gridOffset.y - oldGridOffset.y);
-            for (auto& img : images)
-            {
-                if (img.open)
+                // Move the grid and all images
+                ImVec2 oldGridOffset = gridOffset;
+                gridOffset.x += dragDelta.x;
+                gridOffset.y += dragDelta.y;
+                
+                ImVec2 gridMovement = ImVec2(gridOffset.x - oldGridOffset.x, gridOffset.y - oldGridOffset.y);
+                for (auto& img : images)
                 {
-                    img.position.x += gridMovement.x;
-                    img.position.y += gridMovement.y;
-                    img.targetPosition = img.position;
+                    if (img.open)
+                    {
+                        img.position.x += gridMovement.x;
+                        img.position.y += gridMovement.y;
+                        img.targetPosition = img.position;
+                    }
+                }
+                // Move texts with the grid
+                for (auto& text : texts)
+                {
+                    text.position.x += gridMovement.x / gridScale;
+                    text.position.y += gridMovement.y / gridScale;
                 }
             }
-            // Move texts with the grid
+            ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
+        }
+
+        // Reset dragged image and grid grabbing when mouse is released
+        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+        {
+            draggedImage = nullptr;
+            isGrabbingGrid = false;
+        }
+
+        // Update grid scale based on zoom operations
+        float mouseWheel = ImGui::GetIO().MouseWheel;
+        if (mouseWheel != 0.0f)
+        {
+            float zoomFactor = 1.0f + mouseWheel * 0.1f;
+            float oldGridScale = gridScale;
+            gridScale *= zoomFactor;
+            gridScale = std::max(0.1f, gridScale); // Prevent scale from going negative or zero
+
+            // Adjust gridOffset to zoom towards mouse position
+            ImVec2 mouseGridPos = ImVec2(
+                (mousePos.x - windowPos.x - gridOffset.x) / oldGridScale,
+                (mousePos.y - windowPos.y - gridOffset.y) / oldGridScale
+            );
+            gridOffset.x = mousePos.x - windowPos.x - mouseGridPos.x * gridScale;
+            gridOffset.y = mousePos.y - windowPos.y - mouseGridPos.y * gridScale;
+
+            // Adjust image positions and sizes based on zoom
+            for (auto& img : images)
+            {
+                ImVec2 imgGridPos = ImVec2(
+                    (img.position.x - gridOffset.x) / oldGridScale,
+                    (img.position.y - gridOffset.y) / oldGridScale
+                );
+                img.position.x = gridOffset.x + imgGridPos.x * gridScale;
+                img.position.y = gridOffset.y + imgGridPos.y * gridScale;
+                img.targetPosition = img.position;
+                img.zoom *= zoomFactor;
+            }
+
+            // Adjust text positions and sizes based on zoom
             for (auto& text : texts)
             {
-                text.position.x += gridMovement.x / gridScale;
-                text.position.y += gridMovement.y / gridScale;
+                ImVec2 textGridPos = ImVec2(
+                    (text.position.x - gridOffset.x) / oldGridScale,
+                    (text.position.y - gridOffset.y) / oldGridScale
+                );
+                text.position.x = gridOffset.x + textGridPos.x * gridScale;
+                text.position.y = gridOffset.y + textGridPos.y * gridScale;
+                text.size *= zoomFactor; // Adjust text size based on zoom
             }
-        }
-        ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
-    }
-
-    // Reset dragged image and grid grabbing when mouse is released
-    if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
-    {
-        draggedImage = nullptr;
-        isGrabbingGrid = false;
-    }
-
-    // Update grid scale based on zoom operations
-    float mouseWheel = ImGui::GetIO().MouseWheel;
-    if (mouseWheel != 0.0f)
-    {
-        float zoomFactor = 1.0f + mouseWheel * 0.1f;
-        float oldGridScale = gridScale;
-        gridScale *= zoomFactor;
-        gridScale = std::max(0.1f, gridScale); // Prevent scale from going negative or zero
-
-        // Adjust gridOffset to zoom towards mouse position
-        ImVec2 mouseGridPos = ImVec2(
-            (mousePos.x - windowPos.x - gridOffset.x) / oldGridScale,
-            (mousePos.y - windowPos.y - gridOffset.y) / oldGridScale
-        );
-        gridOffset.x = mousePos.x - windowPos.x - mouseGridPos.x * gridScale;
-        gridOffset.y = mousePos.y - windowPos.y - mouseGridPos.y * gridScale;
-
-        // Adjust image positions and sizes based on zoom
-        for (auto& img : images)
-        {
-            ImVec2 imgGridPos = ImVec2(
-                (img.position.x - gridOffset.x) / oldGridScale,
-                (img.position.y - gridOffset.y) / oldGridScale
-            );
-            img.position.x = gridOffset.x + imgGridPos.x * gridScale;
-            img.position.y = gridOffset.y + imgGridPos.y * gridScale;
-            img.targetPosition = img.position;
-            img.zoom *= zoomFactor;
-        }
-
-        // Adjust text positions and sizes based on zoom
-        for (auto& text : texts)
-        {
-            ImVec2 textGridPos = ImVec2(
-                (text.position.x - gridOffset.x) / oldGridScale,
-                (text.position.y - gridOffset.y) / oldGridScale
-            );
-            text.position.x = gridOffset.x + textGridPos.x * gridScale;
-            text.position.y = gridOffset.y + textGridPos.y * gridScale;
-            text.size *= zoomFactor; // Adjust text size based on zoom
         }
     }
 
@@ -1130,6 +1188,7 @@ int main(int, char**)
     ImGui::StyleColorsDark();
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
+    LoadFonts();
     if (!ImGui_ImplOpenGL3_Init("#version 120"))
     {
         std::cerr << "Failed to initialize ImGui OpenGL3 implementation" << std::endl;
