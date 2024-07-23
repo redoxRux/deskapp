@@ -662,11 +662,12 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
     {
         static char textBuffer[256] = "";
         static ImVec4 textColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
-        static float textSize = 20.0f;
+        static float defaultTextSize = 20.0f;
 
         ImGui::InputText("Text", textBuffer, IM_ARRAYSIZE(textBuffer));
-        ImGui::ColorEdit4("Color", (float*)&textColor);
-        ImGui::SliderFloat("Size", &textSize, 10.0f, 50.0f);
+        
+        // Simplified color picker (only white box)
+        ImGui::ColorEdit3("Color", (float*)&textColor, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
 
         if (ImGui::Button("Add"))
         {
@@ -681,7 +682,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                     std::string(textBuffer),
                     worldPos,
                     textColor,
-                    textSize,
+                    defaultTextSize,
                     false
                 });
                 ImGui::CloseCurrentPopup();
