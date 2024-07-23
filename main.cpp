@@ -675,7 +675,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
 
                     float targetSize = zoomStartValue * zoomFactor;
                     text.size = text.size * 0.9f + targetSize * 0.1f;
-                    text.size = std::max(5.0f, std::min(text.size, 100.0f));
+                    text.size = std::max(5.0f, std::min(text.size, 1000.0f));  // Increased maximum size
                     textClicked = true;
                     clickedOnAnyText = true;
                 }
@@ -725,11 +725,29 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
         static float strokeWidth = 0.0f;
         static int selectedFontSize = 1;
         static const char* fontSizes[] = { "Small Font", "Medium Font", "Large Font" };
-        static const float fontSizeValues[] = { 14.0f, 20.0f, 28.0f };
+        static const float fontSizeValues[] = { 24.0f, 48.0f, 72.0f };  // Increased font sizes
         static int selectedFont = 0;
 
         ImGui::PushItemWidth(150);
-        ImGui::Combo("Font", &selectedFont, FontGetter, static_cast<void*>(&fontNames), fontNames.size());
+
+        // Slowed down font scrolling
+        if (ImGui::BeginCombo("Font", fontNames[selectedFont].c_str()))
+        {
+            for (int i = 0; i < fontNames.size(); i++)
+            {
+                bool isSelected = (selectedFont == i);
+                if (ImGui::Selectable(fontNames[i].c_str(), isSelected))
+                {
+                    selectedFont = i;
+                }
+                if (isSelected)
+                {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+
         ImGui::Combo("Size", &selectedFontSize, fontSizes, IM_ARRAYSIZE(fontSizes));
         ImGui::ColorEdit3("Fill Color", (float*)&fillColor);
         ImGui::ColorEdit3("Stroke Color", (float*)&strokeColor);
