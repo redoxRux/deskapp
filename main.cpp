@@ -670,7 +670,20 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
         ImGui::PushItemWidth(150);
         ImGui::Combo("##FontSize", &selectedFontSize, fontSizes, IM_ARRAYSIZE(fontSizes));
         ImGui::SameLine();
-        ImGui::ColorEdit3("##Color", (float*)&textColor, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel);
+        ImGui::ColorEdit3("##Color", (float*)&textColor, 
+            ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | 
+            ImGuiColorEditFlags_NoSidePreview | ImGuiColorEditFlags_NoPicker);
+        if (ImGui::IsItemClicked())
+        {
+            ImGui::OpenPopup("ColorPicker");
+        }
+        if (ImGui::BeginPopup("ColorPicker"))
+        {
+            ImGui::ColorPicker3("##FullColorPicker", (float*)&textColor, 
+                ImGuiColorEditFlags_NoSidePreview | ImGuiColorEditFlags_NoSmallPreview | 
+                ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoInputs);
+            ImGui::EndPopup();
+        }
         ImGui::PopItemWidth();
 
         // Editable preview text
