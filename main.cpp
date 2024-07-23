@@ -675,7 +675,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
 
                     float targetSize = zoomStartValue * zoomFactor;
                     text.size = text.size * 0.9f + targetSize * 0.1f;
-                    text.size = std::max(5.0f, std::min(text.size, 1000.0f));  // Increased maximum size
+                    text.size = std::max(5.0f, std::min(text.size, 1000.0f));
                     textClicked = true;
                     clickedOnAnyText = true;
                 }
@@ -705,7 +705,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
         }
     }
 
-    ImVec2 buttonPos(10, windowSize.y - 30);
+    ImVec2 buttonPos(10, windowSize.y - 40);
     ImGui::SetCursorPos(buttonPos);
     if (ImGui::Button("Add Text"))
     {
@@ -713,7 +713,8 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
         isAddTextPopupOpen = true;
     }
 
-    ImGui::SetNextWindowPos(ImVec2(buttonPos.x, buttonPos.y - 200), ImGuiCond_Always);
+    ImGui::SetNextWindowPos(ImVec2(buttonPos.x, buttonPos.y - 420), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(350, 400), ImGuiCond_Always);
 
     if (ImGui::BeginPopup("Add Text"))
     {
@@ -725,12 +726,11 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
         static float strokeWidth = 0.0f;
         static int selectedFontSize = 1;
         static const char* fontSizes[] = { "Small Font", "Medium Font", "Large Font" };
-        static const float fontSizeValues[] = { 24.0f, 48.0f, 72.0f };  // Increased font sizes
+        static const float fontSizeValues[] = { 24.0f, 48.0f, 72.0f };
         static int selectedFont = 0;
 
         ImGui::PushItemWidth(150);
 
-        // Slowed down font scrolling
         if (ImGui::BeginCombo("Font", fontNames[selectedFont].c_str()))
         {
             for (int i = 0; i < fontNames.size(); i++)
@@ -752,15 +752,39 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
         ImGui::ColorEdit3("Fill Color", (float*)&fillColor);
         ImGui::ColorEdit3("Stroke Color", (float*)&strokeColor);
         ImGui::SliderFloat("Stroke Width", &strokeWidth, 0.0f, 5.0f);
+
         ImGui::PopItemWidth();
 
-        ImFont* previewFont = (selectedFont == 0) ? io.FontDefault : loadedFonts[selectedFont];
-        ImGui::PushFont(previewFont);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, fillColor);
-        ImGui::InputTextMultiline("##Text", textBuffer, IM_ARRAYSIZE(textBuffer), ImVec2(300, 100), ImGuiInputTextFlags_AllowTabInput);
-        ImGui::PopStyleColor(2);
-        ImGui::PopFont();
+        ImGui::InputTextMultiline("##Text", textBuffer, IM_ARRAYSIZE(textBuffer), ImVec2(330, 60), ImGuiInputTextFlags_AllowTabInput);
+        ImGui::PopStyleColor();
+
+        ImFont* previewFont = (selectedFont == 0) ? io.FontDefault : loadedFonts[selectedFont];
+        float previewFontSize = fontSizeValues[selectedFontSize];
+
+        // Calculate required size for preview box
+        ImVec2 textSize = previewFont->CalcTextSizeA(previewFontSize, FLT_MAX, 0.0f, textBuffer);
+        ImVec2 previewSize = ImVec2(std::max(textSize.x + 10.0f, 330.0f), std::max(textSize.y + 10.0f, 100.0f));
+
+        // Preview box
+        ImVec2 pos = ImGui::GetCursorScreenPos();
+        
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        ImU32 fillColorU32 = ImGui::ColorConvertFloat4ToU32(fillColor);
+        ImU32 strokeColorU32 = ImGui::ColorConvertFloat4ToU32(strokeColor);
+
+        // Create a preview box
+        ImVec2 previewBoxMin = ImVec2(pos.x, pos.y);
+        ImVec2 previewBoxMax = ImVec2(pos.x + previewSize.x, pos.y + previewSize.y);
+        drawList->AddRectFilled(previewBoxMin, previewBoxMax, IM_COL32(50, 50, 50, 255));
+
+        // Render preview text
+        ImVec2 textPos = ImVec2(pos.x + 5, pos.y + 5);
+        RenderTextWithStroke(drawList, previewFont, previewFontSize, textPos, fillColorU32, strokeColorU32, strokeWidth, textBuffer);
+
+        ImGui::Dummy(previewSize); // Space for the preview box
+
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10); // Add some space before the Add button
 
         if (ImGui::Button("Add"))
         {
