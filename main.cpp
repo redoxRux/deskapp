@@ -53,7 +53,9 @@ struct ImageState {
 struct Text {
     std::string content;
     ImVec2 position;
-    ImVec4 color;
+    ImVec4 fillColor;  // Renamed from color to fillColor
+    ImVec4 strokeColor;  // New: color of the text outline
+    float strokeWidth;   // New: width of the text outline
     float size;
     bool selected;
     int fontIndex;  // Add this line to store the font index
@@ -106,6 +108,21 @@ void LoadFonts(float fontSize = 24.0f) {
 
     // Set default font
     io.FontDefault = defaultFont;
+}
+
+void RenderTextWithStroke(ImDrawList* draw_list, const ImFont* font, float font_size, ImVec2 pos, ImU32 fill_col, ImU32 stroke_col, float stroke_width, const char* text, const char* text_end = NULL)
+{
+    if (stroke_width > 0)
+    {
+        for (float x = -stroke_width; x <= stroke_width; x += 1.0f)
+        {
+            for (float y = -stroke_width; y <= stroke_width; y += 1.0f)
+            {
+                draw_list->AddText(font, font_size, ImVec2(pos.x + x, pos.y + y), stroke_col, text, text_end);
+            }
+        }
+    }
+    draw_list->AddText(font, font_size, pos, fill_col, text, text_end);
 }
 
 
@@ -587,7 +604,10 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
             ImVec2 boxMin = ImVec2(screenPos.x - padding, screenPos.y - padding);
             ImVec2 boxMax = ImVec2(screenPos.x + textSize.x + padding, screenPos.y + textSize.y + padding);
 
-            draw_list->AddText(font, scaledSize, screenPos, ImGui::ColorConvertFloat4ToU32(text.color), text.content.c_str());
+            ImU32 fillColor = ImGui::ColorConvertFloat4ToU32(text.fillColor);
+            ImU32 strokeColor = ImGui::ColorConvertFloat4ToU32(text.strokeColor);
+            
+            RenderTextWithStroke(draw_list, font, scaledSize, screenPos, fillColor, strokeColor, text.strokeWidth * gridScale, text.content.c_str());
 
             bool isHovered = ImGui::IsMouseHoveringRect(boxMin, boxMax);
             if (isHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
@@ -690,17 +710,19 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
     if (ImGui::Button("Add Text"))
     {
         ImGui::OpenPopup("Add Text");
-        isAddTextPopupOpen = true;  // Set the flag when opening the popup
+        isAddTextPopupOpen = true;
     }
 
     ImGui::SetNextWindowPos(ImVec2(buttonPos.x, buttonPos.y - 200), ImGuiCond_Always);
 
     if (ImGui::BeginPopup("Add Text"))
     {
-        isAddTextPopupOpen = true;  // Ensure the flag is set while the popup is open
+        isAddTextPopupOpen = true;
 
         static char textBuffer[256] = "";
-        static ImVec4 textColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+        static ImVec4 fillColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+        static ImVec4 strokeColor = ImVec4(0.0f, 0.0f, 0.0f, 1.0f);
+        static float strokeWidth = 0.0f;
         static int selectedFontSize = 1;
         static const char* fontSizes[] = { "Small Font", "Medium Font", "Large Font" };
         static const float fontSizeValues[] = { 14.0f, 20.0f, 28.0f };
@@ -709,32 +731,15 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
         ImGui::PushItemWidth(150);
         ImGui::Combo("Font", &selectedFont, FontGetter, static_cast<void*>(&fontNames), fontNames.size());
         ImGui::Combo("Size", &selectedFontSize, fontSizes, IM_ARRAYSIZE(fontSizes));
-        ImGui::ColorEdit3("Color", (float*)&textColor, 
-            ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel | 
-            ImGuiColorEditFlags_NoSidePreview | ImGuiColorEditFlags_NoPicker);
-        if (ImGui::IsItemClicked())
-        {
-            ImGui::OpenPopup("ColorPicker");
-            colorPickerOpen = true;
-            colorPickerID = ImGui::GetID("ColorPicker");
-        }
-        if (ImGui::BeginPopup("ColorPicker"))
-        {
-            ImGui::ColorPicker3("##FullColorPicker", (float*)&textColor, 
-                ImGuiColorEditFlags_NoSidePreview | ImGuiColorEditFlags_NoSmallPreview | 
-                ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_NoInputs);
-            ImGui::EndPopup();
-        }
-        else if (colorPickerOpen)
-        {
-            colorPickerOpen = false;
-        }
+        ImGui::ColorEdit3("Fill Color", (float*)&fillColor);
+        ImGui::ColorEdit3("Stroke Color", (float*)&strokeColor);
+        ImGui::SliderFloat("Stroke Width", &strokeWidth, 0.0f, 5.0f);
         ImGui::PopItemWidth();
 
         ImFont* previewFont = (selectedFont == 0) ? io.FontDefault : loadedFonts[selectedFont];
         ImGui::PushFont(previewFont);
         ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.1f, 0.1f, 0.1f, 1.0f));
-        ImGui::PushStyleColor(ImGuiCol_Text, textColor);
+        ImGui::PushStyleColor(ImGuiCol_Text, fillColor);
         ImGui::InputTextMultiline("##Text", textBuffer, IM_ARRAYSIZE(textBuffer), ImVec2(300, 100), ImGuiInputTextFlags_AllowTabInput);
         ImGui::PopStyleColor(2);
         ImGui::PopFont();
@@ -751,13 +756,15 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                 texts.push_back({
                     std::string(textBuffer),
                     worldPos,
-                    textColor,
+                    fillColor,
+                    strokeColor,
+                    strokeWidth,
                     fontSizeValues[selectedFontSize],
                     false,
                     selectedFont
                 });
                 ImGui::CloseCurrentPopup();
-                isAddTextPopupOpen = false;  // Reset the flag when closing the popup
+                isAddTextPopupOpen = false;
                 textClicked = true;
             }
         }
@@ -765,7 +772,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
     }
     else
     {
-        isAddTextPopupOpen = false;  // Reset the flag if the popup is not open
+        isAddTextPopupOpen = false;
     }
 
     if (selectedText && ImGui::IsKeyPressed(ImGuiKey_Delete) && !colorPickerOpen && !isAddTextPopupOpen)
