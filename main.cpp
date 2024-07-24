@@ -993,9 +993,13 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
         {
             if (strlen(textBuffer) > 0)
             {
+                // Calculate the center of the current view in screen coordinates
+                ImVec2 screenCenter = ImVec2(windowSize.x * 0.5f, windowSize.y * 0.5f);
+
+                // Convert screen coordinates to world coordinates
                 ImVec2 worldPos = ImVec2(
-                    (windowSize.x / 2 - gridOffset.x) / gridScale,
-                    (windowSize.y / 2 - gridOffset.y) / gridScale
+                    (screenCenter.x - gridOffset.x) / gridScale,
+                    (screenCenter.y - gridOffset.y) / gridScale
                 );
 
                 // Render text to texture
@@ -1010,6 +1014,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                 newImage.width = (int)(textSize.x + strokeWidth * 2 + 10);
                 newImage.height = (int)(textSize.y + strokeWidth * 2 + 10);
                 newImage.position = worldPos;
+                newImage.targetPosition = worldPos;  // Set target position to the same as initial position
                 newImage.zoom = 1.0f;
                 newImage.rotation = 0.0f;
                 newImage.name = "Text Image";
@@ -1017,9 +1022,14 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                 newImage.selected = false;
                 newImage.mirrored = false;
                 newImage.uploadOrder = nextUploadOrder++;
-                newImage.pixelData = pixelData;  // Add this line
-                newImage.isTextImage = true;  // Add this line
+                newImage.pixelData = pixelData;
+                newImage.isTextImage = true;
                 
+                // Center the text by adjusting its position
+                newImage.position.x -= newImage.width * 0.5f / gridScale;
+                newImage.position.y -= newImage.height * 0.5f / gridScale;
+                newImage.targetPosition = newImage.position;
+
                 images.push_back(newImage);
 
                 ImGui::CloseCurrentPopup();
