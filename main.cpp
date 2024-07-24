@@ -449,12 +449,23 @@ void EraseImagePart(Image& img, const ImVec2& point)
 Image CreateImageCopy(const Image& original)
 {
     Image copy = original;
-    copy.texture = CreateTextureFromData(copy.data, copy.width, copy.height);
     copy.position.x += 20;  // Offset the copy slightly
     copy.position.y += 20;
     copy.targetPosition = copy.position;
     copy.uploadOrder = nextUploadOrder++;
     copy.selected = false;  // The new copy is not selected initially
+
+    if (original.isTextImage)
+    {
+        // For text images, create a new texture from pixelData
+        copy.texture = CreateTextureFromData(copy.pixelData, copy.width, copy.height);
+    }
+    else
+    {
+        // For regular images, create a new texture from data
+        copy.texture = CreateTextureFromData(copy.data, copy.width, copy.height);
+    }
+
     return copy;
 }
 
