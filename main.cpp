@@ -78,26 +78,55 @@ const char* FontGetter(void* vec, int idx)
 }
 
 
-void LoadFonts(float fontSize = 24.0f) {
-    const char* fontsDir = "fonts";
+// This code should be placed where you currently load your fonts, 
+// likely in your main.cpp or a separate initialization function
+
+void LoadFonts()
+{
     ImGuiIO& io = ImGui::GetIO();
+    
+    // Clear any existing fonts
+    io.Fonts->Clear();
+    loadedFonts.clear();
+    fontNames.clear();
 
-    // Add default font
-    ImFont* defaultFont = io.Fonts->AddFontDefault();
-    loadedFonts.push_back(defaultFont);
-    fontNames.push_back("Default");
+    // Configure font loading
+    ImFontConfig config;
+    config.OversampleH = 4;
+    config.OversampleV = 4;
+    config.PixelSnapH = false;
 
-    for (const auto& entry : std::filesystem::directory_iterator(fontsDir)) {
-        if (entry.path().extension() == ".ttf") {
+    // Load the default font with increased size
+    float baseFontSize = 24.0f; // Increase this for higher resolution
+    ImFont* defaultFont = io.Fonts->AddFontDefault(&config);
+    if (defaultFont)
+    {
+        loadedFonts.push_back(defaultFont);
+        fontNames.push_back("Default");
+        std::cout << "Loaded default font" << std::endl;
+    }
+    else
+    {
+        std::cerr << "Failed to load default font" << std::endl;
+    }
+
+    // Load your custom fonts
+    for (const auto& entry : std::filesystem::directory_iterator("fonts"))
+    {
+        if (entry.path().extension() == ".ttf")
+        {
             std::string fontPath = entry.path().string();
             std::string fontName = entry.path().stem().string();
             
-            ImFont* font = io.Fonts->AddFontFromFileTTF(fontPath.c_str(), fontSize);
-            if (font != nullptr) {
+            ImFont* font = io.Fonts->AddFontFromFileTTF(fontPath.c_str(), baseFontSize, &config);
+            if (font != nullptr)
+            {
                 loadedFonts.push_back(font);
                 fontNames.push_back(fontName);
                 std::cout << "Loaded font: " << fontName << std::endl;
-            } else {
+            }
+            else
+            {
                 std::cerr << "Failed to load font: " << fontName << std::endl;
             }
         }
@@ -106,8 +135,7 @@ void LoadFonts(float fontSize = 24.0f) {
     // Rebuild font atlas
     io.Fonts->Build();
 
-    // Set default font
-    io.FontDefault = defaultFont;
+    std::cout << "Total fonts loaded: " << loadedFonts.size() << std::endl;
 }
 
 void RenderTextWithStroke(ImDrawList* draw_list, const ImFont* font, float font_size, ImVec2 pos, ImU32 fill_col, ImU32 stroke_col, float stroke_width, const char* text, const char* text_end = NULL)
@@ -585,6 +613,8 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
 
     bool clickedOnAnyText = false;
 
+    std::cout << "Entering HandleTextInterface" << std::endl;
+
     if (!colorPickerOpen && !isAddTextPopupOpen)
     {
         for (auto& text : texts)
@@ -594,7 +624,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                 text.position.y * gridScale + gridOffset.y
             );
 
-            ImFont* font = (text.fontIndex == 0) ? io.FontDefault : loadedFonts[text.fontIndex];
+            ImFont* font = (text.fontIndex == 0 || text.fontIndex >= loadedFonts.size()) ? io.FontDefault : loadedFonts[text.fontIndex];
             float scaledSize = text.size * gridScale;
 
             ImVec2 textSize = font->CalcTextSizeA(scaledSize, FLT_MAX, 0.0f, text.content.c_str());
@@ -607,7 +637,18 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
             ImU32 fillColor = ImGui::ColorConvertFloat4ToU32(text.fillColor);
             ImU32 strokeColor = ImGui::ColorConvertFloat4ToU32(text.strokeColor);
             
-            RenderTextWithStroke(draw_list, font, scaledSize, screenPos, fillColor, strokeColor, text.strokeWidth * gridScale, text.content.c_str());
+            // High-quality text rendering
+            if (text.strokeWidth > 0)
+            {
+                for (float x = -text.strokeWidth; x <= text.strokeWidth; x += 0.5f)
+                {
+                    for (float y = -text.strokeWidth; y <= text.strokeWidth; y += 0.5f)
+                    {
+                        draw_list->AddText(font, scaledSize, ImVec2(screenPos.x + x, screenPos.y + y), strokeColor, text.content.c_str());
+                    }
+                }
+            }
+            draw_list->AddText(font, scaledSize, screenPos, fillColor, text.content.c_str());
 
             bool isHovered = ImGui::IsMouseHoveringRect(boxMin, boxMax);
             if (isHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
@@ -709,6 +750,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
     ImGui::SetCursorPos(buttonPos);
     if (ImGui::Button("Add Text"))
     {
+        std::cout << "Add Text button clicked" << std::endl;
         ImGui::OpenPopup("Add Text");
         isAddTextPopupOpen = true;
     }
@@ -718,6 +760,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
 
     if (ImGui::BeginPopup("Add Text"))
     {
+        std::cout << "Add Text popup opened" << std::endl;
         isAddTextPopupOpen = true;
 
         static char textBuffer[256] = "";
@@ -759,7 +802,28 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
         ImGui::InputTextMultiline("##Text", textBuffer, IM_ARRAYSIZE(textBuffer), ImVec2(330, 60), ImGuiInputTextFlags_AllowTabInput);
         ImGui::PopStyleColor();
 
-        ImFont* previewFont = (selectedFont == 0) ? io.FontDefault : loadedFonts[selectedFont];
+        std::cout << "Selected font index: " << selectedFont << std::endl;
+        std::cout << "Loaded fonts count: " << loadedFonts.size() << std::endl;
+
+        ImFont* previewFont = nullptr;
+        if (selectedFont >= 0 && selectedFont < loadedFonts.size())
+        {
+            previewFont = loadedFonts[selectedFont];
+        }
+        
+        if (!previewFont)
+        {
+            std::cerr << "Warning: Selected font is null, using default font" << std::endl;
+            previewFont = ImGui::GetIO().FontDefault;
+        }
+
+        if (!previewFont)
+        {
+            std::cerr << "Error: No valid font available" << std::endl;
+            ImGui::EndPopup();
+            return;
+        }
+
         float previewFontSize = fontSizeValues[selectedFontSize];
 
         // Calculate required size for preview box
@@ -778,9 +842,19 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
         ImVec2 previewBoxMax = ImVec2(pos.x + previewSize.x, pos.y + previewSize.y);
         drawList->AddRectFilled(previewBoxMin, previewBoxMax, IM_COL32(50, 50, 50, 255));
 
-        // Render preview text
+        // Render preview text with high quality
         ImVec2 textPos = ImVec2(pos.x + 5, pos.y + 5);
-        RenderTextWithStroke(drawList, previewFont, previewFontSize, textPos, fillColorU32, strokeColorU32, strokeWidth, textBuffer);
+        if (strokeWidth > 0)
+        {
+            for (float x = -strokeWidth; x <= strokeWidth; x += 0.5f)
+            {
+                for (float y = -strokeWidth; y <= strokeWidth; y += 0.5f)
+                {
+                    drawList->AddText(previewFont, previewFontSize, ImVec2(textPos.x + x, textPos.y + y), strokeColorU32, textBuffer);
+                }
+            }
+        }
+        drawList->AddText(previewFont, previewFontSize, textPos, fillColorU32, textBuffer);
 
         ImGui::Dummy(previewSize); // Space for the preview box
 
@@ -788,6 +862,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
 
         if (ImGui::Button("Add"))
         {
+            std::cout << "Add button clicked" << std::endl;
             if (strlen(textBuffer) > 0)
             {
                 ImVec2 worldPos = ImVec2(
@@ -808,6 +883,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                 ImGui::CloseCurrentPopup();
                 isAddTextPopupOpen = false;
                 textClicked = true;
+                std::cout << "Text added successfully" << std::endl;
             }
         }
         ImGui::EndPopup();
@@ -830,6 +906,8 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
     {
         ImGui::GetIO().WantCaptureMouse = true;
     }
+
+    std::cout << "Exiting HandleTextInterface" << std::endl;
 }
 
 void ShowImageViewer(bool* p_open)
@@ -1197,19 +1275,21 @@ void ShowImageViewer(bool* p_open)
 
 int main(int, char**)
 {
-    std::cout << "Starting application..." << std::endl;
-
+    // Initialize GLFW
     if (!glfwInit())
     {
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return 1;
     }
 
-    std::cout << "GLFW initialized successfully" << std::endl;
-
+    // Configure GLFW
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
 
+    // Enable MSAA
+    glfwWindowHint(GLFW_SAMPLES, 4);
+
+    // Create window with graphics context
     GLFWwindow* window = glfwCreateWindow(1280, 720, "Advanced Image Viewer", NULL, NULL);
     if (window == NULL)
     {
@@ -1218,46 +1298,46 @@ int main(int, char**)
         return 1;
     }
 
-    std::cout << "GLFW window created successfully" << std::endl;
-
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1); // Enable vsync
 
-    std::cout << "OpenGL context created" << std::endl;
+    // Enable MSAA in OpenGL
+    glEnable(GL_MULTISAMPLE);
 
-    const GLubyte* version = glGetString(GL_VERSION);
-    std::cout << "OpenGL Version: " << (version ? (char*)version : "Unknown") << std::endl;
-
+    // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
 
-    std::cout << "ImGui context created" << std::endl;
+    // Enable keyboard navigation and other quality improvements
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+    io.FontAllowUserScaling = true;
 
+    // Setup Dear ImGui style
     ImGui::StyleColorsDark();
 
+    // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 120");
+
+    // Load fonts
     LoadFonts();
-    if (!ImGui_ImplOpenGL3_Init("#version 120"))
-    {
-        std::cerr << "Failed to initialize ImGui OpenGL3 implementation" << std::endl;
-        return 1;
-    }
 
-    std::cout << "ImGui initialized for OpenGL" << std::endl;
-
-    bool show_viewer = true;
-
+    // Main loop
     while (!glfwWindowShouldClose(window))
     {
         glfwPollEvents();
 
+        // Start the Dear ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
+        // Show the main application window
+        bool show_viewer = true;
         ShowImageViewer(&show_viewer);
 
+        // Rendering
         ImGui::Render();
         int display_w, display_h;
         glfwGetFramebufferSize(window, &display_w, &display_h);
@@ -1269,16 +1349,13 @@ int main(int, char**)
         glfwSwapBuffers(window);
     }
 
-    std::cout << "Cleaning up..." << std::endl;
-
+    // Cleanup
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 
     glfwDestroyWindow(window);
     glfwTerminate();
-
-    std::cout << "Application closed successfully" << std::endl;
 
     return 0;
 }
