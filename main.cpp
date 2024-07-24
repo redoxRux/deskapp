@@ -613,8 +613,6 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
 
     bool clickedOnAnyText = false;
 
-    std::cout << "Entering HandleTextInterface" << std::endl;
-
     if (!colorPickerOpen && !isAddTextPopupOpen)
     {
         for (auto& text : texts)
@@ -624,7 +622,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                 text.position.y * gridScale + gridOffset.y
             );
 
-            ImFont* font = (text.fontIndex == 0) ? io.FontDefault : loadedFonts[text.fontIndex - 1];
+            ImFont* font = loadedFonts[text.fontIndex];
             float scaledSize = text.size * gridScale;
 
             ImVec2 textSize = font->CalcTextSizeA(scaledSize, FLT_MAX, 0.0f, text.content.c_str());
@@ -637,7 +635,6 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
             ImU32 fillColor = ImGui::ColorConvertFloat4ToU32(text.fillColor);
             ImU32 strokeColor = ImGui::ColorConvertFloat4ToU32(text.strokeColor);
             
-            // High-quality text rendering
             if (text.strokeWidth > 0)
             {
                 for (float x = -text.strokeWidth; x <= text.strokeWidth; x += 0.5f)
@@ -660,17 +657,96 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                 textClicked = true;
             }
 
-            // ... (rest of the text handling code remains the same)
+            if (&text == selectedText)
+            {
+                draw_list->AddRect(boxMin, boxMax, IM_COL32(180, 190, 254, 255), 0.0f, 0, 2.0f);
+
+                float zoomBoxSize = 10.0f;
+                float zoomBoxOffset = 5.0f;
+                ImU32 zoomBoxColor = IM_COL32(200, 200, 200, 255);
+                ImU32 zoomBoxHoverColor = IM_COL32(255, 255, 255, 255);
+
+                ImVec2 zoomCorners[4] = {
+                    ImVec2(boxMin.x - zoomBoxSize - zoomBoxOffset, boxMin.y - zoomBoxSize - zoomBoxOffset),
+                    ImVec2(boxMax.x + zoomBoxOffset, boxMin.y - zoomBoxSize - zoomBoxOffset),
+                    ImVec2(boxMax.x + zoomBoxOffset, boxMax.y + zoomBoxOffset),
+                    ImVec2(boxMin.x - zoomBoxSize - zoomBoxOffset, boxMax.y + zoomBoxOffset)
+                };
+
+                for (int i = 0; i < 4; ++i)
+                {
+                    ImVec2 cornerMin = zoomCorners[i];
+                    ImVec2 cornerMax = ImVec2(cornerMin.x + zoomBoxSize, cornerMin.y + zoomBoxSize);
+
+                    bool isZoomHovering = ImGui::IsMouseHoveringRect(cornerMin, cornerMax);
+                    ImU32 color = isZoomHovering ? zoomBoxHoverColor : zoomBoxColor;
+
+                    draw_list->AddRectFilled(cornerMin, cornerMax, color);
+
+                    if (isZoomHovering && ImGui::IsMouseClicked(0))
+                    {
+                        activeZoomCorner = i;
+                        zoomStartPos = ImGui::GetMousePos();
+                        zoomStartValue = text.size;
+                        textClicked = true;
+                        clickedOnAnyText = true;
+                    }
+                }
+
+                if (activeZoomCorner != -1 && ImGui::IsMouseDown(0))
+                {
+                    ImVec2 dragDelta = ImVec2(ImGui::GetMousePos().x - zoomStartPos.x, 
+                                              ImGui::GetMousePos().y - zoomStartPos.y);
+                    
+                    float dragDistance = sqrtf(dragDelta.x * dragDelta.x + dragDelta.y * dragDelta.y);
+                    float zoomFactor = 1.0f + dragDistance * 0.005f;
+
+                    bool shouldZoomOut = false;
+                    switch (activeZoomCorner) {
+                        case 0: shouldZoomOut = dragDelta.x > 0 || dragDelta.y > 0; break;
+                        case 1: shouldZoomOut = dragDelta.x < 0 || dragDelta.y > 0; break;
+                        case 2: shouldZoomOut = dragDelta.x < 0 || dragDelta.y < 0; break;
+                        case 3: shouldZoomOut = dragDelta.x > 0 || dragDelta.y < 0; break;
+                    }
+
+                    if (shouldZoomOut) zoomFactor = 1.0f / zoomFactor;
+
+                    float targetSize = zoomStartValue * zoomFactor;
+                    text.size = text.size * 0.9f + targetSize * 0.1f;
+                    text.size = std::max(5.0f, std::min(text.size, 1000.0f));
+                    textClicked = true;
+                    clickedOnAnyText = true;
+                }
+            }
+
+            if (&text == draggedText && ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+            {
+                ImVec2 dragDelta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
+                text.position.x += dragDelta.x / gridScale;
+                text.position.y += dragDelta.y / gridScale;
+                ImGui::ResetMouseDragDelta(ImGuiMouseButton_Left);
+                textClicked = true;
+                clickedOnAnyText = true;
+            }
         }
 
-        // ... (mouse click and release handling remains the same)
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !clickedOnAnyText)
+        {
+            selectedText = nullptr;
+            draggedText = nullptr;
+        }
+
+        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+        {
+            draggedText = nullptr;
+            activeZoomCorner = -1;
+        }
     }
 
     ImVec2 buttonPos(10, windowSize.y - 40);
     ImGui::SetCursorPos(buttonPos);
     if (ImGui::Button("Add Text"))
     {
-        std::cout << "Add Text button clicked" << std::endl;
         ImGui::OpenPopup("Add Text");
         isAddTextPopupOpen = true;
     }
@@ -680,7 +756,6 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
 
     if (ImGui::BeginPopup("Add Text"))
     {
-        std::cout << "Add Text popup opened" << std::endl;
         isAddTextPopupOpen = true;
 
         static char textBuffer[256] = "";
@@ -722,43 +797,22 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
         ImGui::InputTextMultiline("##Text", textBuffer, IM_ARRAYSIZE(textBuffer), ImVec2(330, 60), ImGuiInputTextFlags_AllowTabInput);
         ImGui::PopStyleColor();
 
-        std::cout << "Selected font index: " << selectedFont << std::endl;
-        std::cout << "Loaded fonts count: " << loadedFonts.size() << std::endl;
-
-        ImFont* previewFont = (selectedFont == 0) ? io.FontDefault : loadedFonts[selectedFont - 1];
-        
-        if (!previewFont)
-        {
-            std::cerr << "Warning: Selected font is null, using default font" << std::endl;
-            previewFont = io.FontDefault;
-        }
-
-        if (!previewFont)
-        {
-            std::cerr << "Error: No valid font available" << std::endl;
-            ImGui::EndPopup();
-            return;
-        }
-
+        ImFont* previewFont = loadedFonts[selectedFont];
         float previewFontSize = fontSizeValues[selectedFontSize];
 
-        // Calculate required size for preview box
         ImVec2 textSize = previewFont->CalcTextSizeA(previewFontSize, FLT_MAX, 0.0f, textBuffer);
         ImVec2 previewSize = ImVec2(std::max(textSize.x + 10.0f, 330.0f), std::max(textSize.y + 10.0f, 100.0f));
 
-        // Preview box
         ImVec2 pos = ImGui::GetCursorScreenPos();
         
         ImDrawList* drawList = ImGui::GetWindowDrawList();
         ImU32 fillColorU32 = ImGui::ColorConvertFloat4ToU32(fillColor);
         ImU32 strokeColorU32 = ImGui::ColorConvertFloat4ToU32(strokeColor);
 
-        // Create a preview box
         ImVec2 previewBoxMin = ImVec2(pos.x, pos.y);
         ImVec2 previewBoxMax = ImVec2(pos.x + previewSize.x, pos.y + previewSize.y);
         drawList->AddRectFilled(previewBoxMin, previewBoxMax, IM_COL32(50, 50, 50, 255));
 
-        // Render preview text with high quality
         ImVec2 textPos = ImVec2(pos.x + 5, pos.y + 5);
         if (strokeWidth > 0)
         {
@@ -772,13 +826,12 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
         }
         drawList->AddText(previewFont, previewFontSize, textPos, fillColorU32, textBuffer);
 
-        ImGui::Dummy(previewSize); // Space for the preview box
+        ImGui::Dummy(previewSize);
 
-        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10); // Add some space before the Add button
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10);
 
         if (ImGui::Button("Add"))
         {
-            std::cout << "Add button clicked" << std::endl;
             if (strlen(textBuffer) > 0)
             {
                 ImVec2 worldPos = ImVec2(
@@ -799,7 +852,6 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                 ImGui::CloseCurrentPopup();
                 isAddTextPopupOpen = false;
                 textClicked = true;
-                std::cout << "Text added successfully" << std::endl;
             }
         }
         ImGui::EndPopup();
@@ -822,8 +874,6 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
     {
         ImGui::GetIO().WantCaptureMouse = true;
     }
-
-    std::cout << "Exiting HandleTextInterface" << std::endl;
 }
 
 void ShowImageViewer(bool* p_open)
