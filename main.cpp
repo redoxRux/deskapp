@@ -11,6 +11,7 @@
 #include "backends/imgui_impl_opengl3.h"
 #include "stb_image.h"
 #include "tinyfiledialogs.h"
+#include <utility> 
 
 // Add these declarations at the top of your file
 std::vector<ImFont*> loadedFonts;
@@ -38,6 +39,8 @@ struct Image {
     int activeZoomCorner;
     ImVec2 zoomStartPos;
     float zoomStartValue;
+    std::vector<unsigned char> pixelData;  // Add this field
+    bool isTextImage;
 };
 
 std::vector<Image> images;
@@ -77,9 +80,144 @@ const char* FontGetter(void* vec, int idx)
     return "Unknown";
 }
 
+// Declarations
+std::pair<GLuint, std::vector<unsigned char>> RenderTextToTexture(const char* text, ImFont* font, float fontSize, ImVec4 fillColor, ImVec4 strokeColor, float strokeWidth);
+void RenderTextToBuffer(std::vector<unsigned char>& buffer, int bufferWidth, int bufferHeight, 
+                        const char* text, ImFont* font, float fontSize, float x, float y, ImVec4 color);
+void DrawTriangle(std::vector<unsigned char>& buffer, int width, int height, ImVec2 pos[3], ImVec4 col);
+bool PointInTriangle(ImVec2 pt, ImVec2 v1, ImVec2 v2, ImVec2 v3);
+float Sign(ImVec2 p1, ImVec2 p2, ImVec2 p3);
 
-// This code should be placed where you currently load your fonts, 
-// likely in your main.cpp or a separate initialization function
+// Function implementations
+std::pair<GLuint, std::vector<unsigned char>> RenderTextToTexture(const char* text, ImFont* font, float fontSize, ImVec4 fillColor, ImVec4 strokeColor, float strokeWidth)
+{
+    // Calculate the size of the text
+    ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, text);
+    
+    // Add some padding
+    int texWidth = (int)(textSize.x + strokeWidth * 2 + 10);
+    int texHeight = (int)(textSize.y + strokeWidth * 2 + 10);
+
+    // Create an image buffer
+    std::vector<unsigned char> imageBuffer(texWidth * texHeight * 4, 0);
+
+    // Render stroke
+    if (strokeWidth > 0)
+    {
+        for (float x = -strokeWidth; x <= strokeWidth; x += 0.5f)
+        {
+            for (float y = -strokeWidth; y <= strokeWidth; y += 0.5f)
+            {
+                RenderTextToBuffer(imageBuffer, texWidth, texHeight, text, font, fontSize, 
+                                   strokeWidth + 5 + x, strokeWidth + 5 + y, strokeColor);
+            }
+        }
+    }
+
+    // Render fill
+    RenderTextToBuffer(imageBuffer, texWidth, texHeight, text, font, fontSize, 
+                       strokeWidth + 5, strokeWidth + 5, fillColor);
+
+    // Create OpenGL texture
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texWidth, texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, imageBuffer.data());
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    return std::make_pair(textureID, imageBuffer);
+}
+
+void RenderTextToBuffer(std::vector<unsigned char>& buffer, int bufferWidth, int bufferHeight, 
+                        const char* text, ImFont* font, float fontSize, float x, float y, ImVec4 color)
+{
+    ImFontAtlas* atlas = font->ContainerAtlas;
+    for (const char* c = text; *c != '\0'; c++)
+    {
+        const ImFontGlyph* glyph = font->FindGlyph(*c);
+        if (!glyph) continue;
+
+        float char_x = x + glyph->X0 * (fontSize / font->FontSize);
+        float char_y = y + glyph->Y0 * (fontSize / font->FontSize);
+        float char_w = (glyph->X1 - glyph->X0) * (fontSize / font->FontSize);
+        float char_h = (glyph->Y1 - glyph->Y0) * (fontSize / font->FontSize);
+
+        float tex_u0 = glyph->U0 * atlas->TexWidth;
+        float tex_v0 = glyph->V0 * atlas->TexHeight;
+        float tex_u1 = glyph->U1 * atlas->TexWidth;
+        float tex_v1 = glyph->V1 * atlas->TexHeight;
+
+        for (int py = 0; py < char_h; py++)
+        {
+            for (int px = 0; px < char_w; px++)
+            {
+                int buffer_x = (int)(char_x + px);
+                int buffer_y = (int)(char_y + py);
+                if (buffer_x < 0 || buffer_x >= bufferWidth || buffer_y < 0 || buffer_y >= bufferHeight)
+                    continue;
+
+                int tex_x = (int)(tex_u0 + (tex_u1 - tex_u0) * (px / char_w));
+                int tex_y = (int)(tex_v0 + (tex_v1 - tex_v0) * (py / char_h));
+                int tex_index = (tex_y * atlas->TexWidth + tex_x) * 4;
+
+                float alpha = atlas->TexPixelsAlpha8[tex_y * atlas->TexWidth + tex_x] / 255.0f;
+
+                int buffer_index = (buffer_y * bufferWidth + buffer_x) * 4;
+                buffer[buffer_index] = (unsigned char)(color.x * 255.0f * alpha);
+                buffer[buffer_index + 1] = (unsigned char)(color.y * 255.0f * alpha);
+                buffer[buffer_index + 2] = (unsigned char)(color.z * 255.0f * alpha);
+                buffer[buffer_index + 3] = (unsigned char)(color.w * 255.0f * alpha);
+            }
+        }
+
+        x += glyph->AdvanceX * (fontSize / font->FontSize);
+    }
+}
+
+void DrawTriangle(std::vector<unsigned char>& buffer, int width, int height, ImVec2 pos[3], ImVec4 col)
+{
+    ImVec2 bb_min = ImVec2(std::min({pos[0].x, pos[1].x, pos[2].x}), std::min({pos[0].y, pos[1].y, pos[2].y}));
+    ImVec2 bb_max = ImVec2(std::max({pos[0].x, pos[1].x, pos[2].x}), std::max({pos[0].y, pos[1].y, pos[2].y}));
+
+    for (int y = (int)bb_min.y; y <= (int)bb_max.y; y++)
+    {
+        for (int x = (int)bb_min.x; x <= (int)bb_max.x; x++)
+        {
+            if (PointInTriangle(ImVec2((float)x, (float)y), pos[0], pos[1], pos[2]))
+            {
+                if (x >= 0 && x < width && y >= 0 && y < height)
+                {
+                    int index = (y * width + x) * 4;
+                    buffer[index] = (unsigned char)(col.x * 255.0f);
+                    buffer[index + 1] = (unsigned char)(col.y * 255.0f);
+                    buffer[index + 2] = (unsigned char)(col.z * 255.0f);
+                    buffer[index + 3] = (unsigned char)(col.w * 255.0f);
+                }
+            }
+        }
+    }
+}
+
+bool PointInTriangle(ImVec2 pt, ImVec2 v1, ImVec2 v2, ImVec2 v3)
+{
+    float d1, d2, d3;
+    bool has_neg, has_pos;
+
+    d1 = Sign(pt, v1, v2);
+    d2 = Sign(pt, v2, v3);
+    d3 = Sign(pt, v3, v1);
+
+    has_neg = (d1 < 0) || (d2 < 0) || (d3 < 0);
+    has_pos = (d1 > 0) || (d2 > 0) || (d3 > 0);
+
+    return !(has_neg && has_pos);
+}
+
+float Sign(ImVec2 p1, ImVec2 p2, ImVec2 p3)
+{
+    return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+}
 
 void LoadFonts()
 {
@@ -257,7 +395,7 @@ void EraseImagePart(Image& img, const ImVec2& point)
     ImVec2 translated = ImVec2(point.x - center.x, point.y - center.y);
 
     // Rotate point back
-    float cos_r = cosf(-img.rotation * 3.14159f / 180.0f); // Note the negative rotation
+    float cos_r = cosf(-img.rotation * 3.14159f / 180.0f);
     float sin_r = sinf(-img.rotation * 3.14159f / 180.0f);
     ImVec2 rotated = ImVec2(
         translated.x * cos_r - translated.y * sin_r,
@@ -286,7 +424,16 @@ void EraseImagePart(Image& img, const ImVec2& point)
                 if (pixelX >= 0 && pixelX < img.width && pixelY >= 0 && pixelY < img.height)
                 {
                     int index = (pixelY * img.width + pixelX) * 4;
-                    img.data[index + 3] = 0; // Set alpha to 0 (transparent)
+                    if (img.isTextImage)
+                    {
+                        // For text images, we set the pixel to fully transparent
+                        img.pixelData[index + 3] = 0;
+                    }
+                    else
+                    {
+                        // For regular images, use the existing erasing method
+                        img.data[index + 3] = 0; // Set alpha to 0 (transparent)
+                    }
                 }
             }
         }
@@ -294,7 +441,8 @@ void EraseImagePart(Image& img, const ImVec2& point)
 
     // Update texture
     glBindTexture(GL_TEXTURE_2D, img.texture);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, img.width, img.height, GL_RGBA, GL_UNSIGNED_BYTE, img.data.data());
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, img.width, img.height, GL_RGBA, GL_UNSIGNED_BYTE, 
+                    img.isTextImage ? img.pixelData.data() : img.data.data());
 }
 
 
@@ -839,16 +987,30 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                     (windowSize.y / 2 - gridOffset.y) / gridScale
                 );
 
-                texts.push_back({
-                    std::string(textBuffer),
-                    worldPos,
-                    fillColor,
-                    strokeColor,
-                    strokeWidth,
-                    fontSizeValues[selectedFontSize],
-                    false,
-                    selectedFont
-                });
+                // Render text to texture
+                auto [textureID, pixelData] = RenderTextToTexture(textBuffer, previewFont, previewFontSize, fillColor, strokeColor, strokeWidth);
+
+                // Calculate the size of the text
+                ImVec2 textSize = previewFont->CalcTextSizeA(previewFontSize, FLT_MAX, 0.0f, textBuffer);
+
+                // Add the texture as an image to your images collection
+                Image newImage;
+                newImage.texture = textureID;
+                newImage.width = (int)(textSize.x + strokeWidth * 2 + 10);
+                newImage.height = (int)(textSize.y + strokeWidth * 2 + 10);
+                newImage.position = worldPos;
+                newImage.zoom = 1.0f;
+                newImage.rotation = 0.0f;
+                newImage.name = "Text Image";
+                newImage.open = true;
+                newImage.selected = false;
+                newImage.mirrored = false;
+                newImage.uploadOrder = nextUploadOrder++;
+                newImage.pixelData = pixelData;  // Add this line
+                newImage.isTextImage = true;  // Add this line
+                
+                images.push_back(newImage);
+
                 ImGui::CloseCurrentPopup();
                 isAddTextPopupOpen = false;
                 textClicked = true;
