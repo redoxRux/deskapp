@@ -41,6 +41,8 @@ struct Image {
     float zoomStartValue;
     std::vector<unsigned char> pixelData;  // Add this field
     bool isTextImage;
+    int originalWidth;
+    int originalHeight;
 };
 
 std::vector<Image> images;
@@ -380,8 +382,11 @@ void LoadTextureFromFile(const char* filename, Image& img)
 
 bool IsPointInImage(const Image& img, const ImVec2& point)
 {
+    float displayWidth = img.isTextImage ? img.originalWidth * img.zoom : img.width * img.zoom;
+    float displayHeight = img.isTextImage ? img.originalHeight * img.zoom : img.height * img.zoom;
+
     ImVec2 topLeft = img.position;
-    ImVec2 bottomRight = ImVec2(img.position.x + img.width * img.zoom, img.position.y + img.height * img.zoom);
+    ImVec2 bottomRight = ImVec2(img.position.x + displayWidth, img.position.y + displayHeight);
     return point.x >= topLeft.x && point.x <= bottomRight.x && point.y >= topLeft.y && point.y <= bottomRight.y;
 }
 
@@ -493,7 +498,11 @@ void DisplayImage(Image& img, bool& imageClicked)
 
     ImVec2 uv_min = img.mirrored ? ImVec2(1.0f, 0.0f) : ImVec2(0.0f, 0.0f);
     ImVec2 uv_max = img.mirrored ? ImVec2(0.0f, 1.0f) : ImVec2(1.0f, 1.0f);
-    ImVec2 scaled_size = ImVec2(img.width * img.zoom, img.height * img.zoom);
+
+    // Calculate the actual size to display
+    float displayWidth = img.isTextImage ? img.originalWidth * img.zoom : img.width * img.zoom;
+    float displayHeight = img.isTextImage ? img.originalHeight * img.zoom : img.height * img.zoom;
+    ImVec2 scaled_size = ImVec2(displayWidth, displayHeight);
 
     // Calculate the center of the image
     ImVec2 center = ImVec2(img.position.x + scaled_size.x * 0.5f, img.position.y + scaled_size.y * 0.5f);
@@ -713,7 +722,7 @@ void DisplayImage(Image& img, bool& imageClicked)
         if (isRotating && ImGui::IsMouseDown(0) && !img.eraserMode)
         {
             ImVec2 mousePos = ImGui::GetMousePos();
-            float currentAngle = atan2f(mousePos.y - rotationCenter.y, mousePos.x - rotationCenter.x);
+            float currentAngle = atan2f(mousePos.y - center.y, mousePos.x - center.x);
             float angleDiff = currentAngle - initialAngle;
             img.rotation += angleDiff * (180.0f / 3.14159f);
             initialAngle = currentAngle;
@@ -1014,7 +1023,7 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                 newImage.width = (int)(textSize.x + strokeWidth * 2 + 10);
                 newImage.height = (int)(textSize.y + strokeWidth * 2 + 10);
                 newImage.position = worldPos;
-                newImage.targetPosition = worldPos;  // Set target position to the same as initial position
+                newImage.targetPosition = worldPos;
                 newImage.zoom = 1.0f;
                 newImage.rotation = 0.0f;
                 newImage.name = "Text Image";
@@ -1024,17 +1033,33 @@ void HandleTextInterface(ImVec2 windowSize, bool& textClicked)
                 newImage.uploadOrder = nextUploadOrder++;
                 newImage.pixelData = pixelData;
                 newImage.isTextImage = true;
+                newImage.eraserMode = false;
+                newImage.eraserSize = 5;
+                newImage.isHoveringZoomControl = false;
+                newImage.activeZoomCorner = -1;
+                
+                // Store the original size of the text image
+                newImage.originalWidth = newImage.width;
+                newImage.originalHeight = newImage.height;
                 
                 // Center the text by adjusting its position
                 newImage.position.x -= newImage.width * 0.5f / gridScale;
                 newImage.position.y -= newImage.height * 0.5f / gridScale;
                 newImage.targetPosition = newImage.position;
 
+                // Save current state for undo
+                undoStates.push_back({images, nextUploadOrder});
+                redoStates.clear();
+
                 images.push_back(newImage);
 
                 ImGui::CloseCurrentPopup();
                 isAddTextPopupOpen = false;
                 textClicked = true;
+
+                std::cout << "Added new text image. Position: (" << newImage.position.x << ", " << newImage.position.y 
+                        << "), Size: " << newImage.width << "x" << newImage.height 
+                        << ", Original Size: " << newImage.originalWidth << "x" << newImage.originalHeight << std::endl;
             }
         }
         ImGui::EndPopup();
